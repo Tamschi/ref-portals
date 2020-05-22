@@ -4,7 +4,7 @@ use std::{
     marker::PhantomData,
     ops::{Deref, DerefMut},
     ptr::NonNull,
-    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 const ANCHOR_STILL_IN_USE: &str = "Anchor still in use";
@@ -54,6 +54,12 @@ pub struct RwAnchor<'a, T: ?Sized> {
     _phantom: PhantomData<&'a mut T>,
 }
 
+#[derive(Debug)]
+pub struct WAnchor<'a, T: ?Sized> {
+    reference: Arc<Mutex<Option<SSNonNull<T>>>>,
+    _phantom: PhantomData<&'a mut T>,
+}
+
 impl<'a, T: ?Sized> Anchor<'a, T> {
     pub fn new(reference: &'a T) -> Self {
         Self {
@@ -90,6 +96,21 @@ impl<'a, T: ?Sized> RwAnchor<'a, T> {
     }
 }
 
+impl<'a, T: ?Sized> WAnchor<'a, T> {
+    pub fn new(reference: &'a mut T) -> Self {
+        Self {
+            reference: Arc::new(Mutex::new(Some(reference.into()))),
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn w_portal(&self) -> WPortal<T> {
+        WPortal {
+            reference: self.reference.clone(),
+        }
+    }
+}
+
 impl<'a, T: ?Sized> Drop for Anchor<'a, T> {
     fn drop(&mut self) {
         self.reference
@@ -116,6 +137,19 @@ impl<'a, T: ?Sized> Drop for RwAnchor<'a, T> {
     }
 }
 
+impl<'a, T: ?Sized> Drop for WAnchor<'a, T> {
+    fn drop(&mut self) {
+        self.reference
+            .try_lock()
+            .unwrap_or_else(|error| match error {
+                std::sync::TryLockError::Poisoned(poison) => Err(poison).expect(ANCHOR_POISONED),
+                std::sync::TryLockError::WouldBlock => panic!(ANCHOR_STILL_IN_USE),
+            })
+            .take()
+            .unwrap();
+    }
+}
+
 #[derive(Debug)]
 pub struct Portal<T: ?Sized> {
     reference: Arc<RwLock<Option<SSNonNull<T>>>>,
@@ -124,6 +158,11 @@ pub struct Portal<T: ?Sized> {
 #[derive(Debug)]
 pub struct RwPortal<T: ?Sized> {
     reference: Arc<RwLock<Option<SSNonNull<T>>>>,
+}
+
+#[derive(Debug)]
+pub struct WPortal<T: ?Sized> {
+    reference: Arc<Mutex<Option<SSNonNull<T>>>>,
 }
 
 impl<T: ?Sized> Portal<T> {
@@ -148,12 +187,24 @@ impl<T: ?Sized> RwPortal<T> {
     }
 }
 
+impl<T: ?Sized> WPortal<T> {
+    pub fn write<'a>(&'a self) -> impl Borrow<T> + BorrowMut<T> + 'a {
+        PortalMutexGuard {
+            guard: self.reference.lock().expect(ANCHOR_POISONED),
+        }
+    }
+}
+
 struct PortalReadGuard<'a, T: 'a + ?Sized> {
     guard: RwLockReadGuard<'a, Option<SSNonNull<T>>>,
 }
 
 struct PortalWriteGuard<'a, T: 'a + ?Sized> {
     guard: RwLockWriteGuard<'a, Option<SSNonNull<T>>>,
+}
+
+struct PortalMutexGuard<'a, T: 'a + ?Sized> {
+    guard: MutexGuard<'a, Option<SSNonNull<T>>>,
 }
 
 impl<'a, T: ?Sized> Borrow<T> for PortalReadGuard<'a, T> {
@@ -176,7 +227,27 @@ impl<'a, T: ?Sized> Borrow<T> for PortalWriteGuard<'a, T> {
     }
 }
 
+impl<'a, T: ?Sized> Borrow<T> for PortalMutexGuard<'a, T> {
+    fn borrow(&self) -> &T {
+        let pointer = self.guard.as_ref().expect(ANCHOR_DROPPED);
+        unsafe {
+            //SAFETY: Valid as long as self.guard is.
+            pointer.as_ref()
+        }
+    }
+}
+
 impl<'a, T: ?Sized> BorrowMut<T> for PortalWriteGuard<'a, T> {
+    fn borrow_mut(&mut self) -> &mut T {
+        let pointer = self.guard.as_mut().expect(ANCHOR_DROPPED);
+        unsafe {
+            //SAFETY: Valid as long as self.guard is. Can't be created from a read-only anchor.
+            pointer.as_mut()
+        }
+    }
+}
+
+impl<'a, T: ?Sized> BorrowMut<T> for PortalMutexGuard<'a, T> {
     fn borrow_mut(&mut self) -> &mut T {
         let pointer = self.guard.as_mut().expect(ANCHOR_DROPPED);
         unsafe {
@@ -190,22 +261,49 @@ impl<'a, T: ?Sized> BorrowMut<T> for PortalWriteGuard<'a, T> {
 mod tests {
     use crate::*;
     fn _compile_time_assertions() {
-        use assert_impl::assert_impl;
+        use {assert_impl::assert_impl, core::any::Any};
+        trait S: Send {}
         trait SS: Send + Sync {}
+        assert_impl!(!Send: WAnchor<'_, dyn Any>, WPortal<dyn Any>);
+        assert_impl!(Send: WAnchor<'_, dyn S>, WPortal<dyn S>);
+        assert_impl!(
+            !Send: Anchor<'_, dyn S>,
+            RwAnchor<'_, dyn S>,
+            Portal<dyn S>,
+            RwPortal<dyn S>,
+        );
         assert_impl!(
             Send: Anchor<'_, dyn SS>,
             RwAnchor<'_, dyn SS>,
             Portal<dyn SS>,
-            RwPortal<dyn SS>
+            RwPortal<dyn SS>,
         );
-        assert_impl!(!Send: PortalReadGuard<'_, ()>, PortalWriteGuard<'_, ()>);
+        assert_impl!(
+            !Send: PortalReadGuard<'_, ()>,
+            PortalWriteGuard<'_, ()>,
+            PortalMutexGuard<'_, ()>,
+        );
+        assert_impl!(!Sync: WPortal<dyn Any>);
+        assert_impl!(Sync: WPortal<dyn S>);
+        assert_impl!(
+            !Sync: Anchor<'_, dyn S>,
+            RwAnchor<'_, dyn S>,
+            WAnchor<'_, dyn S>,
+            Portal<dyn S>,
+            RwPortal<dyn S>,
+            PortalReadGuard<'_, dyn S>,
+            PortalWriteGuard<'_, dyn S>,
+            PortalMutexGuard<'_, dyn S>,
+        );
         assert_impl!(
             Sync: Anchor<'_, dyn SS>,
             RwAnchor<'_, dyn SS>,
+            WAnchor<'_, dyn SS>,
             Portal<dyn SS>,
             RwPortal<dyn SS>,
             PortalReadGuard<'_, dyn SS>,
-            PortalWriteGuard<'_, dyn SS>
+            PortalWriteGuard<'_, dyn SS>,
+            PortalMutexGuard<'_, dyn SS>,
         );
     }
     //TODO
