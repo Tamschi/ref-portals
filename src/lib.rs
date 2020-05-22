@@ -6,6 +6,7 @@ use std::{
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
+const ANCHOR_STILL_IN_USE: &str = "Anchor still in use";
 const ANCHOR_POISONED: &str = "Anchor poisoned";
 const ANCHOR_DROPPED: &str = "Anchor dropped";
 
@@ -59,13 +60,27 @@ impl<'a, T> RwAnchor<'a, T> {
 
 impl<'a, T> Drop for Anchor<'a, T> {
     fn drop(&mut self) {
-        self.reference.write().unwrap().take().unwrap();
+        self.reference
+            .try_write()
+            .unwrap_or_else(|error| match error {
+                std::sync::TryLockError::Poisoned(_) => unreachable!(),
+                std::sync::TryLockError::WouldBlock => panic!(ANCHOR_STILL_IN_USE),
+            })
+            .take()
+            .unwrap();
     }
 }
 
 impl<'a, T> Drop for RwAnchor<'a, T> {
     fn drop(&mut self) {
-        self.reference.write().expect(ANCHOR_POISONED).take();
+        self.reference
+            .try_write()
+            .unwrap_or_else(|error| match error {
+                std::sync::TryLockError::Poisoned(poison) => Err(poison).expect(ANCHOR_POISONED),
+                std::sync::TryLockError::WouldBlock => panic!(ANCHOR_STILL_IN_USE),
+            })
+            .take()
+            .unwrap();
     }
 }
 
