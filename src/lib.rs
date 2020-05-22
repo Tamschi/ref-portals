@@ -2,6 +2,7 @@ use std::{
     borrow::{Borrow, BorrowMut},
     fmt::Debug,
     marker::PhantomData,
+    ops::{Deref, DerefMut},
     ptr::NonNull,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
@@ -10,15 +11,46 @@ const ANCHOR_STILL_IN_USE: &str = "Anchor still in use";
 const ANCHOR_POISONED: &str = "Anchor poisoned";
 const ANCHOR_DROPPED: &str = "Anchor dropped";
 
+#[derive(Debug, Clone, Copy)]
+#[repr(transparent)]
+struct SSNonNull<T>(NonNull<T>);
+unsafe impl<T: Send> Send for SSNonNull<T> {
+    //SAFETY: Externally synchronised in this crate.
+}
+unsafe impl<T: Sync> Sync for SSNonNull<T> {
+    //SAFETY: Externally synchronised in this crate.
+}
+impl<T> From<&T> for SSNonNull<T> {
+    fn from(value: &T) -> Self {
+        Self(value.into())
+    }
+}
+impl<T> From<&mut T> for SSNonNull<T> {
+    fn from(value: &mut T) -> Self {
+        Self(value.into())
+    }
+}
+impl<T> Deref for SSNonNull<T> {
+    type Target = NonNull<T>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl<T> DerefMut for SSNonNull<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 #[derive(Debug)]
 pub struct Anchor<'a, T> {
-    reference: Arc<RwLock<Option<NonNull<T>>>>,
+    reference: Arc<RwLock<Option<SSNonNull<T>>>>,
     _phantom: PhantomData<&'a T>,
 }
 
 #[derive(Debug)]
 pub struct RwAnchor<'a, T> {
-    reference: Arc<RwLock<Option<NonNull<T>>>>,
+    reference: Arc<RwLock<Option<SSNonNull<T>>>>,
     _phantom: PhantomData<&'a mut T>,
 }
 
@@ -86,12 +118,12 @@ impl<'a, T> Drop for RwAnchor<'a, T> {
 
 #[derive(Debug)]
 pub struct Portal<T> {
-    reference: Arc<RwLock<Option<NonNull<T>>>>,
+    reference: Arc<RwLock<Option<SSNonNull<T>>>>,
 }
 
 #[derive(Debug)]
 pub struct RwPortal<T> {
-    reference: Arc<RwLock<Option<NonNull<T>>>>,
+    reference: Arc<RwLock<Option<SSNonNull<T>>>>,
 }
 
 impl<T> Portal<T> {
@@ -117,11 +149,11 @@ impl<T> RwPortal<T> {
 }
 
 struct PortalReadGuard<'a, T: 'a> {
-    guard: RwLockReadGuard<'a, Option<NonNull<T>>>,
+    guard: RwLockReadGuard<'a, Option<SSNonNull<T>>>,
 }
 
 struct PortalWriteGuard<'a, T: 'a> {
-    guard: RwLockWriteGuard<'a, Option<NonNull<T>>>,
+    guard: RwLockWriteGuard<'a, Option<SSNonNull<T>>>,
 }
 
 impl<'a, T> Borrow<T> for PortalReadGuard<'a, T> {
@@ -156,5 +188,24 @@ impl<'a, T> BorrowMut<T> for PortalWriteGuard<'a, T> {
 
 #[cfg(test)]
 mod tests {
+    use crate::*;
+    fn _compile_time_assertions() {
+        use assert_impl::assert_impl;
+        assert_impl!(
+            Send: Anchor<'_, ()>,
+            RwAnchor<'_, ()>,
+            Portal<()>,
+            RwPortal<()>
+        );
+        assert_impl!(!Send: PortalReadGuard<'_, ()>, PortalWriteGuard<'_, ()>);
+        assert_impl!(
+            Sync: Anchor<'_, ()>,
+            RwAnchor<'_, ()>,
+            Portal<()>,
+            RwPortal<()>,
+            PortalReadGuard<'_, ()>,
+            PortalWriteGuard<'_, ()>
+        );
+    }
     //TODO
 }

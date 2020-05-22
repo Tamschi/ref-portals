@@ -3,3 +3,6 @@ name = "ref-portals"
 version = "0.0.0"
 authors = ["Tamme Schichler <tamme@schichler.dev>"]
 edition = "2018"
+
+[dev-dependencies]
+assert-impl = "0.1.3"
