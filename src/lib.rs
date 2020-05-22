@@ -1,5 +1,6 @@
 use std::{
     borrow::{Borrow, BorrowMut},
+    fmt::Debug,
     marker::PhantomData,
     ptr::NonNull,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
@@ -68,10 +69,12 @@ impl<'a, T> Drop for RwAnchor<'a, T> {
     }
 }
 
+#[derive(Debug)]
 pub struct Portal<T> {
     reference: Arc<RwLock<Option<NonNull<T>>>>,
 }
 
+#[derive(Debug)]
 pub struct RwPortal<T> {
     reference: Arc<RwLock<Option<NonNull<T>>>>,
 }
