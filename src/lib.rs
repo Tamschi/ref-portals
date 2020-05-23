@@ -261,7 +261,11 @@ impl<'a, T: ?Sized> BorrowMut<T> for PortalMutexGuard<'a, T> {
 mod tests {
     use crate::*;
     fn _compile_time_assertions() {
-        use {assert_impl::assert_impl, core::any::Any};
+        use {
+            assert_impl::assert_impl,
+            core::any::Any,
+            std::panic::{RefUnwindSafe, UnwindSafe},
+        };
         trait S: Send {}
         trait SS: Send + Sync {}
         assert_impl!(!Send: WAnchor<'_, dyn Any>, WPortal<dyn Any>);
@@ -283,6 +287,7 @@ mod tests {
             PortalWriteGuard<'_, ()>,
             PortalMutexGuard<'_, ()>,
         );
+
         assert_impl!(!Sync: WPortal<dyn Any>);
         assert_impl!(Sync: WPortal<dyn S>);
         assert_impl!(
@@ -304,6 +309,35 @@ mod tests {
             PortalReadGuard<'_, dyn SS>,
             PortalWriteGuard<'_, dyn SS>,
             PortalMutexGuard<'_, dyn SS>,
+        );
+
+        assert_impl!(
+            UnwindSafe: Portal<dyn Any>,
+            PortalReadGuard<'_, dyn Any>,
+            PortalWriteGuard<'_, dyn Any>,
+            PortalMutexGuard<'_, dyn SS>,
+        );
+        assert_impl!(!UnwindSafe: Anchor<'_, dyn UnwindSafe>);
+        assert_impl!(UnwindSafe: Anchor<'_, dyn RefUnwindSafe>,);
+        assert_impl!(!UnwindSafe: RwAnchor<'_, ()>, WAnchor<'_, ()>);
+
+        assert_impl!(
+            RefUnwindSafe: Portal<dyn Any>,
+            RwPortal<dyn Any>,
+            WPortal<dyn Any>,
+            PortalReadGuard<'_, dyn Any>,
+            PortalWriteGuard<'_, dyn Any>,
+            PortalMutexGuard<'_, dyn Any>,
+        );
+        assert_impl!(
+            !RefUnwindSafe: Anchor<'_, dyn UnwindSafe>,
+            RwAnchor<'_, dyn UnwindSafe>,
+            WAnchor<'_, dyn UnwindSafe>,
+        );
+        assert_impl!(
+            RefUnwindSafe: Anchor<'_, dyn RefUnwindSafe>,
+            RwAnchor<'_, dyn RefUnwindSafe>,
+            WAnchor<'_, dyn RefUnwindSafe>,
         );
     }
     //TODO
