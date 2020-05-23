@@ -13,12 +13,14 @@ use {
 };
 
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct Anchor<'a, T: ?Sized> {
     reference: ManuallyDrop<Rc<NonNull<T>>>,
     _phantom: PhantomData<&'a T>,
 }
 
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct RwAnchor<'a, T: ?Sized> {
     reference: ManuallyDrop<Rc<RefCell<NonNull<T>>>>,
     _phantom: PhantomData<&'a mut T>,
@@ -32,12 +34,12 @@ impl<'a, T: ?Sized> Anchor<'a, T> {
         }
     }
 
+    #[inline]
     pub fn portal(&self) -> Portal<T> {
-        Portal {
-            reference: self.reference.deref().clone(),
-        }
+        self.reference.deref().clone().pipe(Portal)
     }
 
+    #[inline]
     pub fn weak_portal(&self) -> WeakPortal<T> {
         Portal::downgrade(&self.portal())
     }
@@ -51,12 +53,12 @@ impl<'a, T: ?Sized> RwAnchor<'a, T> {
         }
     }
 
+    #[inline]
     pub fn portal(&self) -> RwPortal<T> {
-        RwPortal {
-            reference: self.reference.deref().clone(),
-        }
+        self.reference.deref().clone().pipe(RwPortal)
     }
 
+    #[inline]
     pub fn weak_portal(&self) -> WeakRwPortal<T> {
         self.portal().downgrade()
     }
@@ -86,134 +88,122 @@ impl<'a, T: ?Sized> Drop for RwAnchor<'a, T> {
 }
 
 #[derive(Debug)]
-pub struct Portal<T: ?Sized> {
-    reference: Rc<NonNull<T>>,
-}
+#[repr(transparent)]
+pub struct Portal<T: ?Sized>(Rc<NonNull<T>>);
 
 #[derive(Debug)]
-pub struct RwPortal<T: ?Sized> {
-    reference: Rc<RefCell<NonNull<T>>>,
-}
+#[repr(transparent)]
+pub struct RwPortal<T: ?Sized>(Rc<RefCell<NonNull<T>>>);
 
 impl<T: ?Sized> Portal<T> {
+    #[inline]
     pub fn downgrade(portal: &Self) -> WeakPortal<T> {
-        WeakPortal {
-            reference: Rc::downgrade(&portal.reference),
-        }
+        Rc::downgrade(&portal.0).pipe(WeakPortal)
     }
 }
 
 impl<T: ?Sized> Deref for Portal<T> {
     type Target = T;
+    #[inline]
     fn deref(&self) -> &Self::Target {
-        let pointer = self.reference.deref();
+        let pointer = self.0.deref();
         unsafe {
-            //SAFETY: Valid as long as self.reference is.
+            //SAFETY: Valid as long as self.0 is.
             pointer.as_ref()
         }
     }
 }
 
 impl<T: ?Sized> RwPortal<T> {
+    #[inline]
     pub fn downgrade(&self) -> WeakRwPortal<T> {
-        WeakRwPortal {
-            reference: Rc::downgrade(&self.reference),
-        }
+        Rc::downgrade(&self.0).pipe(WeakRwPortal)
     }
 
+    #[inline]
     pub fn borrow<'a>(&'a self) -> impl Deref<Target = T> + 'a {
-        PortalRef {
-            guard: self.reference.as_ref().borrow(),
-        }
+        self.0.as_ref().borrow().pipe(PortalRef)
     }
 
+    #[inline]
     pub fn borrow_mut<'a>(&'a self) -> impl DerefMut<Target = T> + 'a {
-        PortalRefMut {
-            guard: self.reference.as_ref().borrow_mut(),
-        }
+        self.0.as_ref().borrow_mut().pipe(PortalRefMut)
     }
 }
 
 impl<T: ?Sized> Clone for Portal<T> {
+    #[inline]
     fn clone(&self) -> Self {
-        Self {
-            reference: self.reference.clone(),
-        }
+        self.0.clone().pipe(Self)
     }
 }
 
 impl<T: ?Sized> Clone for RwPortal<T> {
+    #[inline]
     fn clone(&self) -> Self {
-        Self {
-            reference: self.reference.clone(),
-        }
+        self.0.clone().pipe(Self)
     }
 }
 
 #[derive(Debug)]
-pub struct WeakPortal<T: ?Sized> {
-    reference: Weak<NonNull<T>>,
-}
+#[repr(transparent)]
+pub struct WeakPortal<T: ?Sized>(Weak<NonNull<T>>);
 
 #[derive(Debug)]
-pub struct WeakRwPortal<T: ?Sized> {
-    reference: Weak<RefCell<NonNull<T>>>,
-}
+#[repr(transparent)]
+pub struct WeakRwPortal<T: ?Sized>(Weak<RefCell<NonNull<T>>>);
 
 impl<T: ?Sized> WeakPortal<T> {
+    #[inline]
     pub fn try_upgrade(&self) -> Option<Portal<T>> {
-        self.reference
-            .upgrade()
-            .map(|reference| Portal { reference })
+        self.0.upgrade().map(Portal)
     }
 
+    #[inline]
     pub fn upgrade(&self) -> Portal<T> {
         self.try_upgrade().expect(ANCHOR_DROPPED)
     }
 }
 
 impl<T: ?Sized> WeakRwPortal<T> {
+    #[inline]
     pub fn try_upgrade(&self) -> Option<RwPortal<T>> {
-        self.reference
-            .upgrade()
-            .map(|reference| RwPortal { reference })
+        self.0.upgrade().map(RwPortal)
     }
 
+    #[inline]
     pub fn upgrade(&self) -> RwPortal<T> {
         self.try_upgrade().expect(ANCHOR_DROPPED)
     }
 }
 
 impl<T: ?Sized> Clone for WeakPortal<T> {
+    #[inline]
     fn clone(&self) -> Self {
-        Self {
-            reference: self.reference.clone(),
-        }
+        self.0.clone().pipe(Self)
     }
 }
 
 impl<T: ?Sized> Clone for WeakRwPortal<T> {
+    #[inline]
     fn clone(&self) -> Self {
-        Self {
-            reference: self.reference.clone(),
-        }
+        self.0.clone().pipe(Self)
     }
 }
 
-struct PortalRef<'a, T: 'a + ?Sized> {
-    guard: Ref<'a, NonNull<T>>,
-}
+#[repr(transparent)]
+struct PortalRef<'a, T: 'a + ?Sized>(Ref<'a, NonNull<T>>);
 
-struct PortalRefMut<'a, T: 'a + ?Sized> {
-    guard: RefMut<'a, NonNull<T>>,
-}
+#[repr(transparent)]
+struct PortalRefMut<'a, T: 'a + ?Sized>(RefMut<'a, NonNull<T>>);
 
 impl<'a, T: ?Sized> Deref for PortalRef<'a, T> {
     type Target = T;
+    #[inline]
     fn deref(&self) -> &Self::Target {
-        let pointer = self.guard.deref();
+        let pointer = self.0.deref();
         unsafe {
-            //SAFETY: Valid as long as self.guard is. Can't be created from a read-only anchor.
+            //SAFETY: Valid as long as self.0 is. Can't be created from a read-only anchor.
             pointer.as_ref()
         }
     }
@@ -221,20 +211,22 @@ impl<'a, T: ?Sized> Deref for PortalRef<'a, T> {
 
 impl<'a, T: ?Sized> Deref for PortalRefMut<'a, T> {
     type Target = T;
+    #[inline]
     fn deref(&self) -> &Self::Target {
-        let pointer = self.guard.deref();
+        let pointer = self.0.deref();
         unsafe {
-            //SAFETY: Valid as long as self.guard is. Can't be created from a read-only anchor.
+            //SAFETY: Valid as long as self.0 is. Can't be created from a read-only anchor.
             pointer.as_ref()
         }
     }
 }
 
 impl<'a, T: ?Sized> DerefMut for PortalRefMut<'a, T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        let pointer = self.guard.deref_mut();
+        let pointer = self.0.deref_mut();
         unsafe {
-            //SAFETY: Valid as long as self.guard is. Can't be created from a read-only anchor.
+            //SAFETY: Valid as long as self.0 is. Can't be created from a read-only anchor.
             pointer.as_mut()
         }
     }
