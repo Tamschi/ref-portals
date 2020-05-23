@@ -1,6 +1,7 @@
 use {
     crate::{ANCHOR_DROPPED, ANCHOR_STILL_IN_USE},
     std::{
+        borrow::Borrow,
         fmt::Debug,
         marker::PhantomData,
         mem::ManuallyDrop,
@@ -194,6 +195,13 @@ impl<T: ?Sized> Deref for Portal<T> {
             //SAFETY: Valid as long as self.0 is.
             pointer.as_ref()
         }
+    }
+}
+
+impl<T: ?Sized> Borrow<T> for Portal<T> {
+    #[inline]
+    fn borrow(&self) -> &T {
+        &*self
     }
 }
 
@@ -499,6 +507,9 @@ mod tests {
             WeakPortal<dyn Any>,
             WeakRwPortal<dyn Any>,
         );
+
+        assert_impl!(Deref<Target = dyn Any>: Portal<dyn Any>);
+        assert_impl!(Borrow<dyn Any>: Portal<dyn Any>);
     }
     //TODO
 }
