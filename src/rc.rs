@@ -37,7 +37,7 @@ impl<'a, T: ?Sized> Anchor<'a, T> {
 
     #[inline]
     pub fn portal(&self) -> Portal<T> {
-        self.reference.deref().clone().pipe(Portal)
+        self.reference.pipe_deref(Rc::clone).pipe(Portal)
     }
 
     #[inline]
@@ -56,7 +56,7 @@ impl<'a, T: ?Sized> RwAnchor<'a, T> {
 
     #[inline]
     pub fn portal(&self) -> RwPortal<T> {
-        self.reference.deref().clone().pipe(RwPortal)
+        self.reference.pipe_deref(Rc::clone).pipe(RwPortal)
     }
 
     #[inline]
@@ -144,14 +144,14 @@ impl<T: ?Sized> RwPortal<T> {
 impl<T: ?Sized> Clone for Portal<T> {
     #[inline]
     fn clone(&self) -> Self {
-        self.0.clone().pipe(Self)
+        self.0.pipe_ref(Rc::clone).pipe(Self)
     }
 }
 
 impl<T: ?Sized> Clone for RwPortal<T> {
     #[inline]
     fn clone(&self) -> Self {
-        self.0.clone().pipe(Self)
+        self.0.pipe_ref(Rc::clone).pipe(Self)
     }
 }
 
@@ -192,14 +192,14 @@ impl<T: ?Sized> WeakRwPortal<T> {
 impl<T: ?Sized> Clone for WeakPortal<T> {
     #[inline]
     fn clone(&self) -> Self {
-        self.0.clone().pipe(Self)
+        self.0.pipe_ref(Weak::clone).pipe(Self)
     }
 }
 
 impl<T: ?Sized> Clone for WeakRwPortal<T> {
     #[inline]
     fn clone(&self) -> Self {
-        self.0.clone().pipe(Self)
+        self.0.pipe_ref(Weak::clone).pipe(Self)
     }
 }
 

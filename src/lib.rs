@@ -1,5 +1,5 @@
 //TODO: clippy::cargo
-#![warn(clippy::pedantic)]
+#![warn(clippy::pedantic, clippy::as_conversions, clippy::clone_on_ref_ptr)]
 
 pub mod rc;
 pub mod sync;
