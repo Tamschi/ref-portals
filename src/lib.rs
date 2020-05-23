@@ -1,5 +1,4 @@
 use std::{
-    borrow::{Borrow, BorrowMut},
     fmt::Debug,
     marker::PhantomData,
     ops::{Deref, DerefMut},
@@ -166,7 +165,7 @@ pub struct WPortal<T: ?Sized> {
 }
 
 impl<T: ?Sized> Portal<T> {
-    pub fn read<'a>(&'a self) -> impl Borrow<T> + 'a {
+    pub fn read<'a>(&'a self) -> impl Deref<Target = T> + 'a {
         PortalReadGuard {
             guard: self.reference.read().unwrap(),
         }
@@ -174,13 +173,13 @@ impl<T: ?Sized> Portal<T> {
 }
 
 impl<T: ?Sized> RwPortal<T> {
-    pub fn read<'a>(&'a self) -> impl Borrow<T> + 'a {
+    pub fn read<'a>(&'a self) -> impl Deref<Target = T> + 'a {
         PortalReadGuard {
             guard: self.reference.read().expect(ANCHOR_POISONED),
         }
     }
 
-    pub fn write<'a>(&'a self) -> impl Borrow<T> + BorrowMut<T> + 'a {
+    pub fn write<'a>(&'a self) -> impl DerefMut<Target = T> + 'a {
         PortalWriteGuard {
             guard: self.reference.write().expect(ANCHOR_POISONED),
         }
@@ -188,7 +187,7 @@ impl<T: ?Sized> RwPortal<T> {
 }
 
 impl<T: ?Sized> WPortal<T> {
-    pub fn write<'a>(&'a self) -> impl Borrow<T> + BorrowMut<T> + 'a {
+    pub fn write<'a>(&'a self) -> impl DerefMut<Target = T> + 'a {
         PortalMutexGuard {
             guard: self.reference.lock().expect(ANCHOR_POISONED),
         }
@@ -207,8 +206,10 @@ struct PortalMutexGuard<'a, T: 'a + ?Sized> {
     guard: MutexGuard<'a, Option<SSNonNull<T>>>,
 }
 
-impl<'a, T: ?Sized> Borrow<T> for PortalReadGuard<'a, T> {
-    fn borrow(&self) -> &T {
+
+impl<'a, T: ?Sized> Deref for PortalReadGuard<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
         let pointer = self.guard.as_ref().expect(ANCHOR_DROPPED);
         unsafe {
             //SAFETY: Valid as long as self.guard is.
@@ -217,8 +218,9 @@ impl<'a, T: ?Sized> Borrow<T> for PortalReadGuard<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> Borrow<T> for PortalWriteGuard<'a, T> {
-    fn borrow(&self) -> &T {
+impl<'a, T: ?Sized> Deref for PortalWriteGuard<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
         let pointer = self.guard.as_ref().expect(ANCHOR_DROPPED);
         unsafe {
             //SAFETY: Valid as long as self.guard is.
@@ -227,8 +229,9 @@ impl<'a, T: ?Sized> Borrow<T> for PortalWriteGuard<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> Borrow<T> for PortalMutexGuard<'a, T> {
-    fn borrow(&self) -> &T {
+impl<'a, T: ?Sized> Deref for PortalMutexGuard<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
         let pointer = self.guard.as_ref().expect(ANCHOR_DROPPED);
         unsafe {
             //SAFETY: Valid as long as self.guard is.
@@ -237,8 +240,8 @@ impl<'a, T: ?Sized> Borrow<T> for PortalMutexGuard<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> BorrowMut<T> for PortalWriteGuard<'a, T> {
-    fn borrow_mut(&mut self) -> &mut T {
+impl<'a, T: ?Sized> DerefMut for PortalWriteGuard<'a, T> {
+    fn deref_mut(&mut self) -> &mut T {
         let pointer = self.guard.as_mut().expect(ANCHOR_DROPPED);
         unsafe {
             //SAFETY: Valid as long as self.guard is. Can't be created from a read-only anchor.
@@ -247,8 +250,8 @@ impl<'a, T: ?Sized> BorrowMut<T> for PortalWriteGuard<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> BorrowMut<T> for PortalMutexGuard<'a, T> {
-    fn borrow_mut(&mut self) -> &mut T {
+impl<'a, T: ?Sized> DerefMut for PortalMutexGuard<'a, T> {
+    fn deref_mut(&mut self) -> &mut T {
         let pointer = self.guard.as_mut().expect(ANCHOR_DROPPED);
         unsafe {
             //SAFETY: Valid as long as self.guard is. Can't be created from a read-only anchor.
