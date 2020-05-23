@@ -1,5 +1,5 @@
-//! Theadsafe anchors and portals.
-//! These (but not their guards) are various degrees of Send and Sync depending on their type parameter.
+//! Theadsafe anchors and portals.  
+//! These (but not their guards) are various degrees of `Send` and `Sync` depending on their type parameter.
 
 use {
     crate::{ANCHOR_DROPPED, ANCHOR_STILL_IN_USE},

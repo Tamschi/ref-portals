@@ -1,5 +1,5 @@
-//! Single-threaded anchors and portals.
-//! These don't implement Send or Sync, but are more efficient for use cases where that's not needed.
+//! Single-threaded anchors and portals.  
+//! These don't implement `Send` or `Sync`, but are more efficient for use cases where that's not needed.
 
 use {
     crate::{ANCHOR_DROPPED, ANCHOR_STILL_IN_USE},
@@ -16,22 +16,50 @@ use {
     wyz::pipe::*,
 };
 
+/// A synchronous immutable anchor.  
+/// Use this to capture shared references in a single-threaded environment.
+///
+/// # Panics
+///
+/// On drop, if any associated `Portal`s exist.
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Anchor<'a, T: ?Sized> {
+    /// Internal pointer to the target of the captured reference.
     reference: ManuallyDrop<Rc<NonNull<T>>>,
+
+    /// Behave like a sharing borrower.
     _phantom: PhantomData<&'a T>,
 }
 
+/// A synchronous mutable anchor.  
+/// Use this to capture mutable references in a single-threaded environment.
+///
+/// # Panics
+///
+/// On drop, if any associated `RwPortal`s exist:
+///
+/// ```rust
+/// use ref_portals::rc::Anchor;
+/// 
+/// let x = "Scoped".to_owned();
+/// let anchor = Anchor::new(&x);
+/// Box::leak(Box::new(anchor.portal()));
+/// drop(anchor)
+/// ```
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct RwAnchor<'a, T: ?Sized> {
+    /// Internal pointer to the target of the captured reference.
     reference: ManuallyDrop<Rc<RefCell<NonNull<T>>>>,
+
+    /// Behave like an exclusive borrower.
     _phantom: PhantomData<&'a mut T>,
 }
 
 impl<'a, T: ?Sized> Anchor<'a, T> {
-    pub fn new(reference: &'a T) -> Self {
+    /// Creates a new `Anchor` instance, capturing `reference`.
+    pub fn new(reference: &'a T) -> Anchor<'a, T> {
         Self {
             reference: ManuallyDrop::new(Rc::new(reference.into())),
             _phantom: PhantomData,
@@ -39,6 +67,23 @@ impl<'a, T: ?Sized> Anchor<'a, T> {
     }
 
     #[inline]
+    /// Creates an infallible portal with unbounded lifetime.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use ref_portals::rc::Anchor;
+    /// #
+    /// let x = "Scoped".to_owned();
+    /// let anchor = Anchor::new(&x);
+    /// let self_owned: Box<dyn Fn() + 'static> = Box::new({
+    ///     let portal = anchor.portal();
+    ///     move || println!("{}", *portal)
+    /// });
+    /// #
+    /// # self_owned(); // Scoped
+    /// ```
+    ///
     pub fn portal(&self) -> Portal<T> {
         self.reference.pipe_deref(Rc::clone).pipe(Portal)
     }
@@ -50,6 +95,7 @@ impl<'a, T: ?Sized> Anchor<'a, T> {
 }
 
 impl<'a, T: ?Sized> RwAnchor<'a, T> {
+    /// Creates a new `RwAnchor` instance, capturing `reference`.
     pub fn new(reference: &'a mut T) -> Self {
         Self {
             reference: ManuallyDrop::new(Rc::new(RefCell::new(reference.into()))),
@@ -315,7 +361,8 @@ mod tests {
     fn _impl_trait_assertions() {
         use {assert_impl::assert_impl, core::any::Any};
 
-        assert_impl!(Clone: Portal<dyn Any>,
+        assert_impl!(
+            Clone: Portal<dyn Any>,
             RwPortal<dyn Any>,
             WeakPortal<dyn Any>,
             WeakRwPortal<dyn Any>,

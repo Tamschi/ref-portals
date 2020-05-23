@@ -1,5 +1,39 @@
 //! Safely use (stack) references outside their original scope.
 
+//! # Example
+//!
+//! ```rust
+//! use ref_portals::rc::Anchor;
+//! 
+//! let x = "Scoped".to_owned();
+//! let anchor = Anchor::new(&x);
+//! let self_owned: Box<dyn Fn() + 'static> = Box::new({
+//!     let portal = anchor.portal();
+//!     move || println!("{}", *portal)
+//! });
+//! 
+//! self_owned(); // Scoped
+//! ```
+//! 
+//! Note that dropping `anchor` before `self_owned` would still cause a panic here.  
+//! You can use weak portals to work around this:
+//!
+//! ```rust
+//! use ref_portals::rc::Anchor;
+//! 
+//! let x = "Scoped".to_owned();
+//! let anchor = Anchor::new(&x);
+//! let eternal: &'static dyn Fn() = Box::leak(Box::new({
+//!     let weak_portal = anchor.weak_portal();
+//!     move || println!(
+//!         "{}",
+//!         *weak_portal.upgrade(), // Panics if the anchor has been dropped.
+//!     )
+//! }));
+//! 
+//! eternal(); // Scoped
+//! ```
+
 //TODO: clippy::cargo
 #![warn(
     clippy::as_conversions,
@@ -23,6 +57,8 @@
     clippy::unimplemented
 )]
 
+#![doc(test(no_crate_inject))]
+
 pub mod rc;
 pub mod sync;
 
@@ -30,4 +66,4 @@ pub mod sync;
 const ANCHOR_DROPPED: &str = "Anchor dropped";
 
 /// Panicked when dropping an anchor if any (strong) portals still exist.
-const ANCHOR_STILL_IN_USE: &str = "Anchor still in use";
+const ANCHOR_STILL_IN_USE: &str = "Anchor still in use (at least one portal exists)";
