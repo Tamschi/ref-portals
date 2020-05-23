@@ -260,7 +260,8 @@ impl<'a, T: ?Sized> BorrowMut<T> for PortalMutexGuard<'a, T> {
 #[cfg(test)]
 mod tests {
     use crate::*;
-    fn _compile_time_assertions() {
+    fn _auto_trait_assertions() {
+        // Anything that necessitates changes in this method is a breaking change.
         use {
             assert_impl::assert_impl,
             core::any::Any,
@@ -339,6 +340,18 @@ mod tests {
             RwAnchor<'_, dyn RefUnwindSafe>,
             WAnchor<'_, dyn RefUnwindSafe>,
         );
+
+        assert_impl!(
+            Unpin: Anchor<'_, dyn Any>,
+            RwAnchor<'_, dyn Any>,
+            WAnchor<'_, dyn Any>,
+            Portal<dyn Any>,
+            RwPortal<dyn Any>,
+            WPortal<dyn Any>,
+            PortalReadGuard<'_, dyn Any>,
+            PortalWriteGuard<'_, dyn Any>,
+            PortalMutexGuard<'_, dyn Any>,
+        )
     }
     //TODO
 }
