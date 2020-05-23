@@ -7,6 +7,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3464313de0c867016e3e69d7e1e9ae3499bcc4c18e12283d381359ed38b5b9e"
 
 [[package]]
+name = "assert-panic"
+version = "0.0.0"
+
+[[package]]
 name = "ref-portals"
 version = "0.0.0"
 dependencies = [

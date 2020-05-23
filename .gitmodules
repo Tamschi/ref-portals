@@ -1,3 +1,6 @@
 [submodule "ref-portals"]
 	path = ref-portals
 	url = https://github.com/Tamschi/ref-portals.git
+[submodule "assert-panic"]
+	path = assert-panic
+	url = https://github.com/Tamschi/assert-panic.git
