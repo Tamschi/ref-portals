@@ -1,8 +1,10 @@
 use std::{
+    cell::{Ref, RefCell, RefMut},
     fmt::Debug,
     marker::PhantomData,
     ops::{Deref, DerefMut},
     ptr::NonNull,
+    rc::Rc,
     sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
@@ -59,6 +61,18 @@ pub struct WAnchor<'a, T: ?Sized> {
     _phantom: PhantomData<&'a mut T>,
 }
 
+#[derive(Debug)]
+pub struct UnSendAnchor<'a, T: ?Sized> {
+    reference: Rc<RefCell<Option<NonNull<T>>>>,
+    _phantom: PhantomData<&'a T>,
+}
+
+#[derive(Debug)]
+pub struct UnSendRwAnchor<'a, T: ?Sized> {
+    reference: Rc<RefCell<Option<NonNull<T>>>>,
+    _phantom: PhantomData<&'a mut T>,
+}
+
 impl<'a, T: ?Sized> Anchor<'a, T> {
     pub fn new(reference: &'a T) -> Self {
         Self {
@@ -110,6 +124,42 @@ impl<'a, T: ?Sized> WAnchor<'a, T> {
     }
 }
 
+impl<'a, T: ?Sized> UnSendAnchor<'a, T> {
+    pub fn new(reference: &'a T) -> Self {
+        Self {
+            reference: Rc::new(RefCell::new(Some(reference.into()))),
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn portal(&self) -> UnSendPortal<T> {
+        UnSendPortal {
+            reference: self.reference.clone(),
+        }
+    }
+}
+
+impl<'a, T: ?Sized> UnSendRwAnchor<'a, T> {
+    pub fn new(reference: &'a mut T) -> Self {
+        Self {
+            reference: Rc::new(RefCell::new(Some(reference.into()))),
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn portal(&self) -> UnSendPortal<T> {
+        UnSendPortal {
+            reference: self.reference.clone(),
+        }
+    }
+
+    pub fn rw_portal(&self) -> UnSendRwPortal<T> {
+        UnSendRwPortal {
+            reference: self.reference.clone(),
+        }
+    }
+}
+
 impl<'a, T: ?Sized> Drop for Anchor<'a, T> {
     fn drop(&mut self) {
         self.reference
@@ -149,6 +199,26 @@ impl<'a, T: ?Sized> Drop for WAnchor<'a, T> {
     }
 }
 
+impl<'a, T: ?Sized> Drop for UnSendAnchor<'a, T> {
+    fn drop(&mut self) {
+        self.reference
+            .try_borrow_mut()
+            .unwrap_or_else(|error| Err(error).expect(ANCHOR_STILL_IN_USE))
+            .take()
+            .unwrap();
+    }
+}
+
+impl<'a, T: ?Sized> Drop for UnSendRwAnchor<'a, T> {
+    fn drop(&mut self) {
+        self.reference
+            .try_borrow_mut()
+            .unwrap_or_else(|error| Err(error).expect(ANCHOR_STILL_IN_USE))
+            .take()
+            .unwrap();
+    }
+}
+
 #[derive(Debug)]
 pub struct Portal<T: ?Sized> {
     reference: Arc<RwLock<Option<SSNonNull<T>>>>,
@@ -162,6 +232,16 @@ pub struct RwPortal<T: ?Sized> {
 #[derive(Debug)]
 pub struct WPortal<T: ?Sized> {
     reference: Arc<Mutex<Option<SSNonNull<T>>>>,
+}
+
+#[derive(Debug)]
+pub struct UnSendPortal<T: ?Sized> {
+    reference: Rc<RefCell<Option<NonNull<T>>>>,
+}
+
+#[derive(Debug)]
+pub struct UnSendRwPortal<T: ?Sized> {
+    reference: Rc<RefCell<Option<NonNull<T>>>>,
 }
 
 impl<T: ?Sized> Portal<T> {
@@ -194,6 +274,28 @@ impl<T: ?Sized> WPortal<T> {
     }
 }
 
+impl<T: ?Sized> UnSendPortal<T> {
+    pub fn borrow<'a>(&'a self) -> impl Deref<Target = T> + 'a {
+        UnSendPortalRef {
+            guard: self.reference.as_ref().borrow(),
+        }
+    }
+}
+
+impl<T: ?Sized> UnSendRwPortal<T> {
+    pub fn borrow<'a>(&'a self) -> impl Deref<Target = T> + 'a {
+        UnSendPortalRef {
+            guard: self.reference.as_ref().borrow(),
+        }
+    }
+
+    pub fn borrow_mut<'a>(&'a self) -> impl DerefMut<Target = T> + 'a {
+        UnSendPortalRefMut {
+            guard: self.reference.as_ref().borrow_mut(),
+        }
+    }
+}
+
 struct PortalReadGuard<'a, T: 'a + ?Sized> {
     guard: RwLockReadGuard<'a, Option<SSNonNull<T>>>,
 }
@@ -206,6 +308,13 @@ struct PortalMutexGuard<'a, T: 'a + ?Sized> {
     guard: MutexGuard<'a, Option<SSNonNull<T>>>,
 }
 
+struct UnSendPortalRef<'a, T: 'a + ?Sized> {
+    guard: Ref<'a, Option<NonNull<T>>>,
+}
+
+struct UnSendPortalRefMut<'a, T: 'a + ?Sized> {
+    guard: RefMut<'a, Option<NonNull<T>>>,
+}
 
 impl<'a, T: ?Sized> Deref for PortalReadGuard<'a, T> {
     type Target = T;
@@ -253,6 +362,38 @@ impl<'a, T: ?Sized> DerefMut for PortalWriteGuard<'a, T> {
 impl<'a, T: ?Sized> DerefMut for PortalMutexGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut T {
         let pointer = self.guard.as_mut().expect(ANCHOR_DROPPED);
+        unsafe {
+            //SAFETY: Valid as long as self.guard is. Can't be created from a read-only anchor.
+            pointer.as_mut()
+        }
+    }
+}
+
+impl<'a, T: ?Sized> Deref for UnSendPortalRef<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        let pointer = self.guard.deref().as_ref().unwrap();
+        unsafe {
+            //SAFETY: Valid as long as self.guard is. Can't be created from a read-only anchor.
+            pointer.as_ref()
+        }
+    }
+}
+
+impl<'a, T: ?Sized> Deref for UnSendPortalRefMut<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        let pointer = self.guard.deref().as_ref().unwrap();
+        unsafe {
+            //SAFETY: Valid as long as self.guard is. Can't be created from a read-only anchor.
+            pointer.as_ref()
+        }
+    }
+}
+
+impl<'a, T: ?Sized> DerefMut for UnSendPortalRefMut<'a, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        let pointer = self.guard.deref_mut().as_mut().unwrap();
         unsafe {
             //SAFETY: Valid as long as self.guard is. Can't be created from a read-only anchor.
             pointer.as_mut()
