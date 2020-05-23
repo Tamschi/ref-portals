@@ -13,18 +13,18 @@ use {
 };
 
 #[derive(Debug)]
-pub struct UnSendAnchor<'a, T: ?Sized> {
+pub struct Anchor<'a, T: ?Sized> {
     reference: ManuallyDrop<Rc<NonNull<T>>>,
     _phantom: PhantomData<&'a T>,
 }
 
 #[derive(Debug)]
-pub struct UnSendRwAnchor<'a, T: ?Sized> {
+pub struct RwAnchor<'a, T: ?Sized> {
     reference: ManuallyDrop<Rc<RefCell<NonNull<T>>>>,
     _phantom: PhantomData<&'a mut T>,
 }
 
-impl<'a, T: ?Sized> UnSendAnchor<'a, T> {
+impl<'a, T: ?Sized> Anchor<'a, T> {
     pub fn new(reference: &'a T) -> Self {
         Self {
             reference: ManuallyDrop::new(Rc::new(reference.into())),
@@ -32,14 +32,14 @@ impl<'a, T: ?Sized> UnSendAnchor<'a, T> {
         }
     }
 
-    pub fn portal(&self) -> UnSendPortal<T> {
-        UnSendPortal {
+    pub fn portal(&self) -> Portal<T> {
+        Portal {
             reference: self.reference.deref().clone(),
         }
     }
 }
 
-impl<'a, T: ?Sized> UnSendRwAnchor<'a, T> {
+impl<'a, T: ?Sized> RwAnchor<'a, T> {
     pub fn new(reference: &'a mut T) -> Self {
         Self {
             reference: ManuallyDrop::new(Rc::new(RefCell::new(reference.into()))),
@@ -47,14 +47,14 @@ impl<'a, T: ?Sized> UnSendRwAnchor<'a, T> {
         }
     }
 
-    pub fn rw_portal(&self) -> UnSendRwPortal<T> {
-        UnSendRwPortal {
+    pub fn rw_portal(&self) -> RwPortal<T> {
+        RwPortal {
             reference: self.reference.deref().clone(),
         }
     }
 }
 
-impl<'a, T: ?Sized> Drop for UnSendAnchor<'a, T> {
+impl<'a, T: ?Sized> Drop for Anchor<'a, T> {
     fn drop(&mut self) {
         unsafe {
             //SAFETY: Dropping.
@@ -65,7 +65,7 @@ impl<'a, T: ?Sized> Drop for UnSendAnchor<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> Drop for UnSendRwAnchor<'a, T> {
+impl<'a, T: ?Sized> Drop for RwAnchor<'a, T> {
     fn drop(&mut self) {
         unsafe {
             //SAFETY: Dropping.
@@ -78,16 +78,16 @@ impl<'a, T: ?Sized> Drop for UnSendRwAnchor<'a, T> {
 }
 
 #[derive(Debug)]
-pub struct UnSendPortal<T: ?Sized> {
+pub struct Portal<T: ?Sized> {
     reference: Rc<NonNull<T>>,
 }
 
 #[derive(Debug)]
-pub struct UnSendRwPortal<T: ?Sized> {
+pub struct RwPortal<T: ?Sized> {
     reference: Rc<RefCell<NonNull<T>>>,
 }
 
-impl<T: ?Sized> Deref for UnSendPortal<T> {
+impl<T: ?Sized> Deref for Portal<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         let pointer = self.reference.deref();
@@ -98,29 +98,29 @@ impl<T: ?Sized> Deref for UnSendPortal<T> {
     }
 }
 
-impl<T: ?Sized> UnSendRwPortal<T> {
+impl<T: ?Sized> RwPortal<T> {
     pub fn borrow<'a>(&'a self) -> impl Deref<Target = T> + 'a {
-        UnSendPortalRef {
+        PortalRef {
             guard: self.reference.as_ref().borrow(),
         }
     }
 
     pub fn borrow_mut<'a>(&'a self) -> impl DerefMut<Target = T> + 'a {
-        UnSendPortalRefMut {
+        PortalRefMut {
             guard: self.reference.as_ref().borrow_mut(),
         }
     }
 }
 
-struct UnSendPortalRef<'a, T: 'a + ?Sized> {
+struct PortalRef<'a, T: 'a + ?Sized> {
     guard: Ref<'a, NonNull<T>>,
 }
 
-struct UnSendPortalRefMut<'a, T: 'a + ?Sized> {
+struct PortalRefMut<'a, T: 'a + ?Sized> {
     guard: RefMut<'a, NonNull<T>>,
 }
 
-impl<'a, T: ?Sized> Deref for UnSendPortalRef<'a, T> {
+impl<'a, T: ?Sized> Deref for PortalRef<'a, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         let pointer = self.guard.deref();
@@ -131,7 +131,7 @@ impl<'a, T: ?Sized> Deref for UnSendPortalRef<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> Deref for UnSendPortalRefMut<'a, T> {
+impl<'a, T: ?Sized> Deref for PortalRefMut<'a, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         let pointer = self.guard.deref();
@@ -142,7 +142,7 @@ impl<'a, T: ?Sized> Deref for UnSendPortalRefMut<'a, T> {
     }
 }
 
-impl<'a, T: ?Sized> DerefMut for UnSendPortalRefMut<'a, T> {
+impl<'a, T: ?Sized> DerefMut for PortalRefMut<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         let pointer = self.guard.deref_mut();
         unsafe {
@@ -164,55 +164,55 @@ mod tests {
         };
 
         assert_impl!(
-            !Send: UnSendAnchor<'_, ()>,
-            UnSendRwAnchor<'_, ()>,
-            UnSendPortal<()>,
-            UnSendRwPortal<()>,
-            UnSendPortalRef<'_, ()>,
-            UnSendPortalRefMut<'_, ()>,
+            !Send: Anchor<'_, ()>,
+            RwAnchor<'_, ()>,
+            Portal<()>,
+            RwPortal<()>,
+            PortalRef<'_, ()>,
+            PortalRefMut<'_, ()>,
         );
 
         assert_impl!(
-            !Sync: UnSendAnchor<'_, ()>,
-            UnSendRwAnchor<'_, ()>,
-            UnSendPortal<()>,
-            UnSendRwPortal<()>,
-            UnSendPortalRef<'_, ()>,
-            UnSendPortalRefMut<'_, ()>,
+            !Sync: Anchor<'_, ()>,
+            RwAnchor<'_, ()>,
+            Portal<()>,
+            RwPortal<()>,
+            PortalRef<'_, ()>,
+            PortalRefMut<'_, ()>,
         );
 
         assert_impl!(
-            !UnwindSafe: UnSendAnchor<'_, dyn UnwindSafe>,
-            UnSendPortal<dyn UnwindSafe>,
+            !UnwindSafe: Anchor<'_, dyn UnwindSafe>,
+            Portal<dyn UnwindSafe>,
         );
         assert_impl!(
-            UnwindSafe: UnSendAnchor<'_, dyn RefUnwindSafe>,
-            UnSendPortal<dyn RefUnwindSafe>,
+            UnwindSafe: Anchor<'_, dyn RefUnwindSafe>,
+            Portal<dyn RefUnwindSafe>,
         );
         assert_impl!(
-            !UnwindSafe: UnSendRwAnchor<'_, ()>,
-            UnSendRwPortal<()>,
-            UnSendPortalRef<'_, ()>,
-            UnSendPortalRefMut<'_, ()>
+            !UnwindSafe: RwAnchor<'_, ()>,
+            RwPortal<()>,
+            PortalRef<'_, ()>,
+            PortalRefMut<'_, ()>
         );
 
         assert_impl!(
             //TODO: Should any of these by more RefUnwindSafe?
-            !RefUnwindSafe: UnSendAnchor<'_, ()>,
-            UnSendRwAnchor<'_, ()>,
-            UnSendPortal<()>,
-            UnSendRwPortal<()>,
-            UnSendPortalRef<'_, ()>,
-            UnSendPortalRefMut<'_, ()>,
+            !RefUnwindSafe: Anchor<'_, ()>,
+            RwAnchor<'_, ()>,
+            Portal<()>,
+            RwPortal<()>,
+            PortalRef<'_, ()>,
+            PortalRefMut<'_, ()>,
         );
 
         assert_impl!(
-            Unpin: UnSendAnchor<'_, dyn Any>,
-            UnSendRwAnchor<'_, dyn Any>,
-            UnSendPortal<dyn Any>,
-            UnSendRwPortal<dyn Any>,
-            UnSendPortalRef<'_, dyn Any>,
-            UnSendPortalRefMut<'_, dyn Any>,
+            Unpin: Anchor<'_, dyn Any>,
+            RwAnchor<'_, dyn Any>,
+            Portal<dyn Any>,
+            RwPortal<dyn Any>,
+            PortalRef<'_, dyn Any>,
+            PortalRefMut<'_, dyn Any>,
         )
     }
     //TODO
