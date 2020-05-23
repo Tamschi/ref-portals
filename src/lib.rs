@@ -1,3 +1,6 @@
+//TODO: clippy::cargo
+#![warn(clippy::pedantic)]
+
 pub mod rc;
 pub mod sync;
 

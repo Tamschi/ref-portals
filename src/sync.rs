@@ -168,14 +168,17 @@ impl<'a, T: ?Sized> Drop for WAnchor<'a, T> {
 }
 
 #[derive(Debug)]
+#[must_use]
 #[repr(transparent)]
 pub struct Portal<T: ?Sized>(Arc<SSNonNull<T>>);
 
 #[derive(Debug)]
+#[must_use]
 #[repr(transparent)]
 pub struct RwPortal<T: ?Sized>(Arc<RwLock<SSNonNull<T>>>);
 
 #[derive(Debug)]
+#[must_use]
 #[repr(transparent)]
 pub struct WPortal<T: ?Sized>(Arc<Mutex<SSNonNull<T>>>);
 
@@ -259,14 +262,17 @@ impl<T: ?Sized> Clone for WPortal<T> {
 }
 
 #[derive(Debug)]
+#[must_use]
 #[repr(transparent)]
 pub struct WeakPortal<T: ?Sized>(Weak<SSNonNull<T>>);
 
 #[derive(Debug)]
+#[must_use]
 #[repr(transparent)]
 pub struct WeakRwPortal<T: ?Sized>(Weak<RwLock<SSNonNull<T>>>);
 
 #[derive(Debug)]
+#[must_use]
 #[repr(transparent)]
 pub struct WeakWPortal<T: ?Sized>(Weak<Mutex<SSNonNull<T>>>);
 

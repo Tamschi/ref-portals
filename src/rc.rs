@@ -89,10 +89,12 @@ impl<'a, T: ?Sized> Drop for RwAnchor<'a, T> {
 }
 
 #[derive(Debug)]
+#[must_use]
 #[repr(transparent)]
 pub struct Portal<T: ?Sized>(Rc<NonNull<T>>);
 
 #[derive(Debug)]
+#[must_use]
 #[repr(transparent)]
 pub struct RwPortal<T: ?Sized>(Rc<RefCell<NonNull<T>>>);
 
@@ -154,10 +156,12 @@ impl<T: ?Sized> Clone for RwPortal<T> {
 }
 
 #[derive(Debug)]
+#[must_use]
 #[repr(transparent)]
 pub struct WeakPortal<T: ?Sized>(Weak<NonNull<T>>);
 
 #[derive(Debug)]
+#[must_use]
 #[repr(transparent)]
 pub struct WeakRwPortal<T: ?Sized>(Weak<RefCell<NonNull<T>>>);
 
