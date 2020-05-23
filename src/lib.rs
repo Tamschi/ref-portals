@@ -429,6 +429,12 @@ mod tests {
             !Send: PortalReadGuard<'_, ()>,
             PortalWriteGuard<'_, ()>,
             PortalMutexGuard<'_, ()>,
+            UnSendAnchor<'_, ()>,
+            UnSendRwAnchor<'_, ()>,
+            UnSendPortal<()>,
+            UnSendRwPortal<()>,
+            UnSendPortalRef<'_, ()>,
+            UnSendPortalRefMut<'_, ()>,
         );
 
         assert_impl!(!Sync: WPortal<dyn Any>);
@@ -453,21 +459,40 @@ mod tests {
             PortalWriteGuard<'_, dyn SS>,
             PortalMutexGuard<'_, dyn SS>,
         );
+        assert_impl!(
+            !Sync: UnSendAnchor<'_, ()>,
+            UnSendRwAnchor<'_, ()>,
+            UnSendPortal<()>,
+            UnSendRwPortal<()>,
+            UnSendPortalRef<'_, ()>,
+            UnSendPortalRefMut<'_, ()>,
+        );
 
         assert_impl!(
             UnwindSafe: PortalReadGuard<'_, dyn Any>,
             PortalWriteGuard<'_, dyn Any>,
-            PortalMutexGuard<'_, dyn SS>,
+            PortalMutexGuard<'_, dyn Any>,
         );
         assert_impl!(
             !UnwindSafe: Anchor<'_, dyn UnwindSafe>,
+            UnSendAnchor<'_, dyn UnwindSafe>,
             Portal<dyn UnwindSafe>,
+            UnSendPortal<dyn UnwindSafe>,
         );
         assert_impl!(
             UnwindSafe: Anchor<'_, dyn RefUnwindSafe>,
+            UnSendAnchor<'_, dyn RefUnwindSafe>,
             Portal<dyn RefUnwindSafe>,
+            UnSendPortal<dyn RefUnwindSafe>,
         );
-        assert_impl!(!UnwindSafe: RwAnchor<'_, ()>, WAnchor<'_, ()>);
+        assert_impl!(
+            !UnwindSafe: RwAnchor<'_, ()>,
+            WAnchor<'_, ()>,
+            UnSendRwAnchor<'_, ()>,
+            UnSendRwPortal<()>,
+            UnSendPortalRef<'_, ()>,
+            UnSendPortalRefMut<'_, ()>
+        );
 
         assert_impl!(
             RefUnwindSafe: RwPortal<dyn Any>,
@@ -480,6 +505,8 @@ mod tests {
             !RefUnwindSafe: Anchor<'_, dyn UnwindSafe>,
             RwAnchor<'_, dyn UnwindSafe>,
             WAnchor<'_, dyn UnwindSafe>,
+            UnSendAnchor<'_, dyn UnwindSafe>,
+            UnSendRwAnchor<'_, dyn UnwindSafe>,
             Portal<dyn UnwindSafe>,
         );
         assert_impl!(
@@ -488,17 +515,32 @@ mod tests {
             WAnchor<'_, dyn RefUnwindSafe>,
             Portal<dyn RefUnwindSafe>,
         );
+        assert_impl!(
+            //TODO: Should any of these by more RefUnwindSafe?
+            !RefUnwindSafe: UnSendAnchor<'_, ()>,
+            UnSendRwAnchor<'_, ()>,
+            UnSendPortal<()>,
+            UnSendRwPortal<()>,
+            UnSendPortalRef<'_, ()>,
+            UnSendPortalRefMut<'_, ()>,
+        );
 
         assert_impl!(
             Unpin: Anchor<'_, dyn Any>,
             RwAnchor<'_, dyn Any>,
             WAnchor<'_, dyn Any>,
+            UnSendAnchor<'_, dyn Any>,
+            UnSendRwAnchor<'_, dyn Any>,
             Portal<dyn Any>,
             RwPortal<dyn Any>,
             WPortal<dyn Any>,
+            UnSendPortal<dyn Any>,
+            UnSendRwPortal<dyn Any>,
             PortalReadGuard<'_, dyn Any>,
             PortalWriteGuard<'_, dyn Any>,
             PortalMutexGuard<'_, dyn Any>,
+            UnSendPortalRef<'_, dyn Any>,
+            UnSendPortalRefMut<'_, dyn Any>,
         )
     }
     //TODO
