@@ -1,16 +1,19 @@
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    fmt::Debug,
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-    ptr::NonNull,
-    rc::Rc,
-    sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
+use {
+    std::{
+        cell::{Ref, RefCell, RefMut},
+        fmt::Debug,
+        marker::PhantomData,
+        mem::ManuallyDrop,
+        ops::{Deref, DerefMut},
+        ptr::NonNull,
+        rc::Rc,
+        sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    },
+    wyz::pipe::*,
 };
 
 const ANCHOR_STILL_IN_USE: &str = "Anchor still in use";
 const ANCHOR_POISONED: &str = "Anchor poisoned";
-const ANCHOR_DROPPED: &str = "Anchor dropped";
 
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
@@ -45,45 +48,45 @@ impl<T: ?Sized> DerefMut for SSNonNull<T> {
 
 #[derive(Debug)]
 pub struct Anchor<'a, T: ?Sized> {
-    reference: Arc<RwLock<Option<SSNonNull<T>>>>,
+    reference: ManuallyDrop<Arc<SSNonNull<T>>>,
     _phantom: PhantomData<&'a T>,
 }
 
 #[derive(Debug)]
 pub struct RwAnchor<'a, T: ?Sized> {
-    reference: Arc<RwLock<Option<SSNonNull<T>>>>,
+    reference: ManuallyDrop<Arc<RwLock<SSNonNull<T>>>>,
     _phantom: PhantomData<&'a mut T>,
 }
 
 #[derive(Debug)]
 pub struct WAnchor<'a, T: ?Sized> {
-    reference: Arc<Mutex<Option<SSNonNull<T>>>>,
+    reference: ManuallyDrop<Arc<Mutex<SSNonNull<T>>>>,
     _phantom: PhantomData<&'a mut T>,
 }
 
 #[derive(Debug)]
 pub struct UnSendAnchor<'a, T: ?Sized> {
-    reference: Rc<RefCell<Option<NonNull<T>>>>,
+    reference: ManuallyDrop<Rc<NonNull<T>>>,
     _phantom: PhantomData<&'a T>,
 }
 
 #[derive(Debug)]
 pub struct UnSendRwAnchor<'a, T: ?Sized> {
-    reference: Rc<RefCell<Option<NonNull<T>>>>,
+    reference: ManuallyDrop<Rc<RefCell<NonNull<T>>>>,
     _phantom: PhantomData<&'a mut T>,
 }
 
 impl<'a, T: ?Sized> Anchor<'a, T> {
     pub fn new(reference: &'a T) -> Self {
         Self {
-            reference: Arc::new(RwLock::new(Some(reference.into()))),
+            reference: ManuallyDrop::new(Arc::new(reference.into())),
             _phantom: PhantomData,
         }
     }
 
     pub fn portal(&self) -> Portal<T> {
         Portal {
-            reference: self.reference.clone(),
+            reference: self.reference.deref().clone(),
         }
     }
 }
@@ -91,20 +94,14 @@ impl<'a, T: ?Sized> Anchor<'a, T> {
 impl<'a, T: ?Sized> RwAnchor<'a, T> {
     pub fn new(reference: &'a mut T) -> Self {
         Self {
-            reference: Arc::new(RwLock::new(Some(reference.into()))),
+            reference: ManuallyDrop::new(Arc::new(RwLock::new(reference.into()))),
             _phantom: PhantomData,
-        }
-    }
-
-    pub fn portal(&self) -> Portal<T> {
-        Portal {
-            reference: self.reference.clone(),
         }
     }
 
     pub fn rw_portal(&self) -> RwPortal<T> {
         RwPortal {
-            reference: self.reference.clone(),
+            reference: self.reference.deref().clone(),
         }
     }
 }
@@ -112,14 +109,14 @@ impl<'a, T: ?Sized> RwAnchor<'a, T> {
 impl<'a, T: ?Sized> WAnchor<'a, T> {
     pub fn new(reference: &'a mut T) -> Self {
         Self {
-            reference: Arc::new(Mutex::new(Some(reference.into()))),
+            reference: ManuallyDrop::new(Arc::new(Mutex::new(reference.into()))),
             _phantom: PhantomData,
         }
     }
 
     pub fn w_portal(&self) -> WPortal<T> {
         WPortal {
-            reference: self.reference.clone(),
+            reference: self.reference.deref().clone(),
         }
     }
 }
@@ -127,14 +124,14 @@ impl<'a, T: ?Sized> WAnchor<'a, T> {
 impl<'a, T: ?Sized> UnSendAnchor<'a, T> {
     pub fn new(reference: &'a T) -> Self {
         Self {
-            reference: Rc::new(RefCell::new(Some(reference.into()))),
+            reference: ManuallyDrop::new(Rc::new(reference.into())),
             _phantom: PhantomData,
         }
     }
 
     pub fn portal(&self) -> UnSendPortal<T> {
         UnSendPortal {
-            reference: self.reference.clone(),
+            reference: self.reference.deref().clone(),
         }
     }
 }
@@ -142,112 +139,110 @@ impl<'a, T: ?Sized> UnSendAnchor<'a, T> {
 impl<'a, T: ?Sized> UnSendRwAnchor<'a, T> {
     pub fn new(reference: &'a mut T) -> Self {
         Self {
-            reference: Rc::new(RefCell::new(Some(reference.into()))),
+            reference: ManuallyDrop::new(Rc::new(RefCell::new(reference.into()))),
             _phantom: PhantomData,
-        }
-    }
-
-    pub fn portal(&self) -> UnSendPortal<T> {
-        UnSendPortal {
-            reference: self.reference.clone(),
         }
     }
 
     pub fn rw_portal(&self) -> UnSendRwPortal<T> {
         UnSendRwPortal {
-            reference: self.reference.clone(),
+            reference: self.reference.deref().clone(),
         }
     }
 }
 
 impl<'a, T: ?Sized> Drop for Anchor<'a, T> {
     fn drop(&mut self) {
-        self.reference
-            .try_write()
-            .unwrap_or_else(|error| match error {
-                std::sync::TryLockError::Poisoned(_) => unreachable!(),
-                std::sync::TryLockError::WouldBlock => panic!(ANCHOR_STILL_IN_USE),
-            })
-            .take()
-            .unwrap();
+        unsafe {
+            //SAFETY: Dropping.
+            ManuallyDrop::take(&mut self.reference)
+        }
+        .pipe(Arc::try_unwrap)
+        .unwrap_or_else(|_| panic!(ANCHOR_STILL_IN_USE));
     }
 }
 
 impl<'a, T: ?Sized> Drop for RwAnchor<'a, T> {
     fn drop(&mut self) {
-        self.reference
-            .try_write()
-            .unwrap_or_else(|error| match error {
-                std::sync::TryLockError::Poisoned(poison) => Err(poison).expect(ANCHOR_POISONED),
-                std::sync::TryLockError::WouldBlock => panic!(ANCHOR_STILL_IN_USE),
-            })
-            .take()
-            .unwrap();
+        unsafe {
+            //SAFETY: Dropping.
+            ManuallyDrop::take(&mut self.reference)
+        }
+        .pipe(Arc::try_unwrap)
+        .unwrap_or_else(|_| panic!(ANCHOR_STILL_IN_USE))
+        .into_inner()
+        .unwrap_or_else(|error| Err(error).expect(ANCHOR_POISONED));
     }
 }
 
 impl<'a, T: ?Sized> Drop for WAnchor<'a, T> {
     fn drop(&mut self) {
-        self.reference
-            .try_lock()
-            .unwrap_or_else(|error| match error {
-                std::sync::TryLockError::Poisoned(poison) => Err(poison).expect(ANCHOR_POISONED),
-                std::sync::TryLockError::WouldBlock => panic!(ANCHOR_STILL_IN_USE),
-            })
-            .take()
-            .unwrap();
+        unsafe {
+            //SAFETY: Dropping.
+            ManuallyDrop::take(&mut self.reference)
+        }
+        .pipe(Arc::try_unwrap)
+        .unwrap_or_else(|_| panic!(ANCHOR_STILL_IN_USE))
+        .into_inner()
+        .unwrap_or_else(|error| Err(error).expect(ANCHOR_POISONED));
     }
 }
 
 impl<'a, T: ?Sized> Drop for UnSendAnchor<'a, T> {
     fn drop(&mut self) {
-        self.reference
-            .try_borrow_mut()
-            .unwrap_or_else(|error| Err(error).expect(ANCHOR_STILL_IN_USE))
-            .take()
-            .unwrap();
+        unsafe {
+            //SAFETY: Dropping.
+            ManuallyDrop::take(&mut self.reference)
+        }
+        .pipe(Rc::try_unwrap)
+        .expect(ANCHOR_STILL_IN_USE);
     }
 }
 
 impl<'a, T: ?Sized> Drop for UnSendRwAnchor<'a, T> {
     fn drop(&mut self) {
-        self.reference
-            .try_borrow_mut()
-            .unwrap_or_else(|error| Err(error).expect(ANCHOR_STILL_IN_USE))
-            .take()
-            .unwrap();
+        unsafe {
+            //SAFETY: Dropping.
+            ManuallyDrop::take(&mut self.reference)
+        }
+        .pipe(Rc::try_unwrap)
+        .expect(ANCHOR_STILL_IN_USE)
+        .into_inner(); // Not fallible.
     }
 }
 
 #[derive(Debug)]
 pub struct Portal<T: ?Sized> {
-    reference: Arc<RwLock<Option<SSNonNull<T>>>>,
+    reference: Arc<SSNonNull<T>>,
 }
 
 #[derive(Debug)]
 pub struct RwPortal<T: ?Sized> {
-    reference: Arc<RwLock<Option<SSNonNull<T>>>>,
+    reference: Arc<RwLock<SSNonNull<T>>>,
 }
 
 #[derive(Debug)]
 pub struct WPortal<T: ?Sized> {
-    reference: Arc<Mutex<Option<SSNonNull<T>>>>,
+    reference: Arc<Mutex<SSNonNull<T>>>,
 }
 
 #[derive(Debug)]
 pub struct UnSendPortal<T: ?Sized> {
-    reference: Rc<RefCell<Option<NonNull<T>>>>,
+    reference: Rc<NonNull<T>>,
 }
 
 #[derive(Debug)]
 pub struct UnSendRwPortal<T: ?Sized> {
-    reference: Rc<RefCell<Option<NonNull<T>>>>,
+    reference: Rc<RefCell<NonNull<T>>>,
 }
 
-impl<T: ?Sized> Portal<T> {
-    pub fn read<'a>(&'a self) -> impl Deref<Target = T> + 'a {
-        PortalReadGuard {
-            guard: self.reference.read().unwrap(),
+impl<T: ?Sized> Deref for Portal<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        let pointer = self.reference.deref();
+        unsafe {
+            //SAFETY: Valid as long as self.reference is.
+            pointer.as_ref()
         }
     }
 }
@@ -274,10 +269,13 @@ impl<T: ?Sized> WPortal<T> {
     }
 }
 
-impl<T: ?Sized> UnSendPortal<T> {
-    pub fn borrow<'a>(&'a self) -> impl Deref<Target = T> + 'a {
-        UnSendPortalRef {
-            guard: self.reference.as_ref().borrow(),
+impl<T: ?Sized> Deref for UnSendPortal<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        let pointer = self.reference.deref();
+        unsafe {
+            //SAFETY: Valid as long as self.reference is.
+            pointer.as_ref()
         }
     }
 }
@@ -297,29 +295,29 @@ impl<T: ?Sized> UnSendRwPortal<T> {
 }
 
 struct PortalReadGuard<'a, T: 'a + ?Sized> {
-    guard: RwLockReadGuard<'a, Option<SSNonNull<T>>>,
+    guard: RwLockReadGuard<'a, SSNonNull<T>>,
 }
 
 struct PortalWriteGuard<'a, T: 'a + ?Sized> {
-    guard: RwLockWriteGuard<'a, Option<SSNonNull<T>>>,
+    guard: RwLockWriteGuard<'a, SSNonNull<T>>,
 }
 
 struct PortalMutexGuard<'a, T: 'a + ?Sized> {
-    guard: MutexGuard<'a, Option<SSNonNull<T>>>,
+    guard: MutexGuard<'a, SSNonNull<T>>,
 }
 
 struct UnSendPortalRef<'a, T: 'a + ?Sized> {
-    guard: Ref<'a, Option<NonNull<T>>>,
+    guard: Ref<'a, NonNull<T>>,
 }
 
 struct UnSendPortalRefMut<'a, T: 'a + ?Sized> {
-    guard: RefMut<'a, Option<NonNull<T>>>,
+    guard: RefMut<'a, NonNull<T>>,
 }
 
 impl<'a, T: ?Sized> Deref for PortalReadGuard<'a, T> {
     type Target = T;
     fn deref(&self) -> &T {
-        let pointer = self.guard.as_ref().expect(ANCHOR_DROPPED);
+        let pointer = self.guard.deref();
         unsafe {
             //SAFETY: Valid as long as self.guard is.
             pointer.as_ref()
@@ -330,7 +328,7 @@ impl<'a, T: ?Sized> Deref for PortalReadGuard<'a, T> {
 impl<'a, T: ?Sized> Deref for PortalWriteGuard<'a, T> {
     type Target = T;
     fn deref(&self) -> &T {
-        let pointer = self.guard.as_ref().expect(ANCHOR_DROPPED);
+        let pointer = self.guard.deref();
         unsafe {
             //SAFETY: Valid as long as self.guard is.
             pointer.as_ref()
@@ -341,7 +339,7 @@ impl<'a, T: ?Sized> Deref for PortalWriteGuard<'a, T> {
 impl<'a, T: ?Sized> Deref for PortalMutexGuard<'a, T> {
     type Target = T;
     fn deref(&self) -> &T {
-        let pointer = self.guard.as_ref().expect(ANCHOR_DROPPED);
+        let pointer = self.guard.deref();
         unsafe {
             //SAFETY: Valid as long as self.guard is.
             pointer.as_ref()
@@ -351,7 +349,7 @@ impl<'a, T: ?Sized> Deref for PortalMutexGuard<'a, T> {
 
 impl<'a, T: ?Sized> DerefMut for PortalWriteGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut T {
-        let pointer = self.guard.as_mut().expect(ANCHOR_DROPPED);
+        let pointer = self.guard.deref_mut();
         unsafe {
             //SAFETY: Valid as long as self.guard is. Can't be created from a read-only anchor.
             pointer.as_mut()
@@ -361,7 +359,7 @@ impl<'a, T: ?Sized> DerefMut for PortalWriteGuard<'a, T> {
 
 impl<'a, T: ?Sized> DerefMut for PortalMutexGuard<'a, T> {
     fn deref_mut(&mut self) -> &mut T {
-        let pointer = self.guard.as_mut().expect(ANCHOR_DROPPED);
+        let pointer = self.guard.deref_mut();
         unsafe {
             //SAFETY: Valid as long as self.guard is. Can't be created from a read-only anchor.
             pointer.as_mut()
@@ -372,7 +370,7 @@ impl<'a, T: ?Sized> DerefMut for PortalMutexGuard<'a, T> {
 impl<'a, T: ?Sized> Deref for UnSendPortalRef<'a, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
-        let pointer = self.guard.deref().as_ref().unwrap();
+        let pointer = self.guard.deref();
         unsafe {
             //SAFETY: Valid as long as self.guard is. Can't be created from a read-only anchor.
             pointer.as_ref()
@@ -383,7 +381,7 @@ impl<'a, T: ?Sized> Deref for UnSendPortalRef<'a, T> {
 impl<'a, T: ?Sized> Deref for UnSendPortalRefMut<'a, T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
-        let pointer = self.guard.deref().as_ref().unwrap();
+        let pointer = self.guard.deref();
         unsafe {
             //SAFETY: Valid as long as self.guard is. Can't be created from a read-only anchor.
             pointer.as_ref()
@@ -393,7 +391,7 @@ impl<'a, T: ?Sized> Deref for UnSendPortalRefMut<'a, T> {
 
 impl<'a, T: ?Sized> DerefMut for UnSendPortalRefMut<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        let pointer = self.guard.deref_mut().as_mut().unwrap();
+        let pointer = self.guard.deref_mut();
         unsafe {
             //SAFETY: Valid as long as self.guard is. Can't be created from a read-only anchor.
             pointer.as_mut()
@@ -457,18 +455,22 @@ mod tests {
         );
 
         assert_impl!(
-            UnwindSafe: Portal<dyn Any>,
-            PortalReadGuard<'_, dyn Any>,
+            UnwindSafe: PortalReadGuard<'_, dyn Any>,
             PortalWriteGuard<'_, dyn Any>,
             PortalMutexGuard<'_, dyn SS>,
         );
-        assert_impl!(!UnwindSafe: Anchor<'_, dyn UnwindSafe>);
-        assert_impl!(UnwindSafe: Anchor<'_, dyn RefUnwindSafe>,);
+        assert_impl!(
+            !UnwindSafe: Anchor<'_, dyn UnwindSafe>,
+            Portal<dyn UnwindSafe>,
+        );
+        assert_impl!(
+            UnwindSafe: Anchor<'_, dyn RefUnwindSafe>,
+            Portal<dyn RefUnwindSafe>,
+        );
         assert_impl!(!UnwindSafe: RwAnchor<'_, ()>, WAnchor<'_, ()>);
 
         assert_impl!(
-            RefUnwindSafe: Portal<dyn Any>,
-            RwPortal<dyn Any>,
+            RefUnwindSafe: RwPortal<dyn Any>,
             WPortal<dyn Any>,
             PortalReadGuard<'_, dyn Any>,
             PortalWriteGuard<'_, dyn Any>,
@@ -478,11 +480,13 @@ mod tests {
             !RefUnwindSafe: Anchor<'_, dyn UnwindSafe>,
             RwAnchor<'_, dyn UnwindSafe>,
             WAnchor<'_, dyn UnwindSafe>,
+            Portal<dyn UnwindSafe>,
         );
         assert_impl!(
             RefUnwindSafe: Anchor<'_, dyn RefUnwindSafe>,
             RwAnchor<'_, dyn RefUnwindSafe>,
             WAnchor<'_, dyn RefUnwindSafe>,
+            Portal<dyn RefUnwindSafe>,
         );
 
         assert_impl!(
