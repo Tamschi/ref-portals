@@ -85,7 +85,7 @@ impl<'a, T: ?Sized> RwAnchor<'a, T> {
         }
     }
 
-    pub fn rw_portal(&self) -> RwPortal<T> {
+    pub fn portal(&self) -> RwPortal<T> {
         RwPortal {
             reference: self.reference.deref().clone(),
         }
@@ -100,7 +100,7 @@ impl<'a, T: ?Sized> WAnchor<'a, T> {
         }
     }
 
-    pub fn w_portal(&self) -> WPortal<T> {
+    pub fn portal(&self) -> WPortal<T> {
         WPortal {
             reference: self.reference.deref().clone(),
         }
