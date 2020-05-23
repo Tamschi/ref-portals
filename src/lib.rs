@@ -1,9 +1,12 @@
-//TODO: clippy::cargo, clippy::missing_docs_in_private_items
+//! Safely use (stack) references outside their original scope.
+
+//TODO: clippy::cargo
 #![warn(
     clippy::as_conversions,
     clippy::clone_on_ref_ptr,
     clippy::fallible_impl_from,
     clippy::missing_const_for_fn,
+    clippy::missing_docs_in_private_items,
     clippy::multiple_crate_versions,
     clippy::needless_borrow,
     clippy::pedantic,
@@ -23,5 +26,8 @@
 pub mod rc;
 pub mod sync;
 
+/// Panicked when upgrading weak portals if the anchor has been destroyed already.
 const ANCHOR_DROPPED: &str = "Anchor dropped";
+
+/// Panicked when dropping an anchor if any (strong) portals still exist.
 const ANCHOR_STILL_IN_USE: &str = "Anchor still in use";

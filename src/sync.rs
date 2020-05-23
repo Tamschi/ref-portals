@@ -1,3 +1,6 @@
+//! Theadsafe anchors and portals.
+//! These (but not their guards) are various degrees of Send and Sync depending on their type parameter.
+
 use {
     crate::{ANCHOR_DROPPED, ANCHOR_STILL_IN_USE},
     std::{
@@ -12,8 +15,12 @@ use {
     wyz::pipe::*,
 };
 
+/// Panicked when borrowing through a portal or dropping an anchor if the anchor has been poisoned.
+/// Only mutable anchors can be poisoned.
 const ANCHOR_POISONED: &str = "Anchor poisoned";
 
+/// An externally synchronised `NonNull<T>`.
+/// SS stands for Send Sync.
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 struct SSNonNull<T: ?Sized>(NonNull<T>);
@@ -508,7 +515,8 @@ mod tests {
     fn _impl_trait_assertions() {
         use {assert_impl::assert_impl, core::any::Any};
 
-        assert_impl!(Clone: Portal<dyn Any>,
+        assert_impl!(
+            Clone: Portal<dyn Any>,
             RwPortal<dyn Any>,
             WeakPortal<dyn Any>,
             WeakRwPortal<dyn Any>,

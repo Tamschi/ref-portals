@@ -1,3 +1,6 @@
+//! Single-threaded anchors and portals.
+//! These don't implement Send or Sync, but are more efficient for use cases where that's not needed.
+
 use {
     crate::{ANCHOR_DROPPED, ANCHOR_STILL_IN_USE},
     std::{
