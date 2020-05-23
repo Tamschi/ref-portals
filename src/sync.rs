@@ -224,6 +224,30 @@ impl<T: ?Sized> WPortal<T> {
     }
 }
 
+impl<T: ?Sized> Clone for Portal<T> {
+    fn clone(&self) -> Self {
+        Self {
+            reference: self.reference.clone(),
+        }
+    }
+}
+
+impl<T: ?Sized> Clone for RwPortal<T> {
+    fn clone(&self) -> Self {
+        Self {
+            reference: self.reference.clone(),
+        }
+    }
+}
+
+impl<T: ?Sized> Clone for WPortal<T> {
+    fn clone(&self) -> Self {
+        Self {
+            reference: self.reference.clone(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct WeakPortal<T: ?Sized> {
     reference: Weak<SSNonNull<T>>,
@@ -272,6 +296,30 @@ impl<T: ?Sized> WeakWPortal<T> {
 
     pub fn upgrade(&self) -> WPortal<T> {
         self.try_upgrade().expect(ANCHOR_DROPPED)
+    }
+}
+
+impl<T: ?Sized> Clone for WeakPortal<T> {
+    fn clone(&self) -> Self {
+        Self {
+            reference: self.reference.clone(),
+        }
+    }
+}
+
+impl<T: ?Sized> Clone for WeakRwPortal<T> {
+    fn clone(&self) -> Self {
+        Self {
+            reference: self.reference.clone(),
+        }
+    }
+}
+
+impl<T: ?Sized> Clone for WeakWPortal<T> {
+    fn clone(&self) -> Self {
+        Self {
+            reference: self.reference.clone(),
+        }
     }
 }
 
@@ -350,8 +398,10 @@ mod tests {
             core::any::Any,
             std::panic::{RefUnwindSafe, UnwindSafe},
         };
+
         trait S: Send {}
         trait SS: Send + Sync {}
+
         assert_impl!(!Send: WAnchor<'_, dyn Any>, WPortal<dyn Any>);
         assert_impl!(Send: WAnchor<'_, dyn S>, WPortal<dyn S>);
         assert_impl!(
@@ -441,6 +491,16 @@ mod tests {
             PortalWriteGuard<'_, dyn Any>,
             PortalMutexGuard<'_, dyn Any>,
         )
+    }
+
+    fn _impl_trait_assertions() {
+        use {assert_impl::assert_impl, core::any::Any};
+
+        assert_impl!(Clone: Portal<dyn Any>,
+            RwPortal<dyn Any>,
+            WeakPortal<dyn Any>,
+            WeakRwPortal<dyn Any>,
+        );
     }
     //TODO
 }

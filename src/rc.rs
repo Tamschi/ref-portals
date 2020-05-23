@@ -134,6 +134,22 @@ impl<T: ?Sized> RwPortal<T> {
     }
 }
 
+impl<T: ?Sized> Clone for Portal<T> {
+    fn clone(&self) -> Self {
+        Self {
+            reference: self.reference.clone(),
+        }
+    }
+}
+
+impl<T: ?Sized> Clone for RwPortal<T> {
+    fn clone(&self) -> Self {
+        Self {
+            reference: self.reference.clone(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct WeakPortal<T: ?Sized> {
     reference: Weak<NonNull<T>>,
@@ -165,6 +181,22 @@ impl<T: ?Sized> WeakRwPortal<T> {
 
     pub fn upgrade(&self) -> RwPortal<T> {
         self.try_upgrade().expect(ANCHOR_DROPPED)
+    }
+}
+
+impl<T: ?Sized> Clone for WeakPortal<T> {
+    fn clone(&self) -> Self {
+        Self {
+            reference: self.reference.clone(),
+        }
+    }
+}
+
+impl<T: ?Sized> Clone for WeakRwPortal<T> {
+    fn clone(&self) -> Self {
+        Self {
+            reference: self.reference.clone(),
+        }
     }
 }
 
@@ -211,6 +243,7 @@ impl<'a, T: ?Sized> DerefMut for PortalRefMut<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     fn _auto_trait_assertions() {
         // Anything that necessitates changes in this method is a breaking change.
         use {
@@ -270,6 +303,16 @@ mod tests {
             PortalRef<'_, dyn Any>,
             PortalRefMut<'_, dyn Any>,
         )
+    }
+
+    fn _impl_trait_assertions() {
+        use {assert_impl::assert_impl, core::any::Any};
+
+        assert_impl!(Clone: Portal<dyn Any>,
+            RwPortal<dyn Any>,
+            WeakPortal<dyn Any>,
+            WeakRwPortal<dyn Any>,
+        );
     }
     //TODO
 }
