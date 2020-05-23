@@ -1,5 +1,5 @@
 use {
-    crate::ANCHOR_STILL_IN_USE,
+    crate::{ANCHOR_DROPPED, ANCHOR_STILL_IN_USE},
     std::{
         cell::{Ref, RefCell, RefMut},
         fmt::Debug,
@@ -7,7 +7,7 @@ use {
         mem::ManuallyDrop,
         ops::{Deref, DerefMut},
         ptr::NonNull,
-        rc::Rc,
+        rc::{Rc, Weak},
     },
     wyz::pipe::*,
 };
@@ -37,6 +37,10 @@ impl<'a, T: ?Sized> Anchor<'a, T> {
             reference: self.reference.deref().clone(),
         }
     }
+
+    pub fn weak_portal(&self) -> WeakPortal<T> {
+        Portal::downgrade(&self.portal())
+    }
 }
 
 impl<'a, T: ?Sized> RwAnchor<'a, T> {
@@ -51,6 +55,10 @@ impl<'a, T: ?Sized> RwAnchor<'a, T> {
         RwPortal {
             reference: self.reference.deref().clone(),
         }
+    }
+
+    pub fn weak_portal(&self) -> WeakRwPortal<T> {
+        self.portal().downgrade()
     }
 }
 
@@ -87,6 +95,14 @@ pub struct RwPortal<T: ?Sized> {
     reference: Rc<RefCell<NonNull<T>>>,
 }
 
+impl<T: ?Sized> Portal<T> {
+    pub fn downgrade(portal: &Self) -> WeakPortal<T> {
+        WeakPortal {
+            reference: Rc::downgrade(&portal.reference),
+        }
+    }
+}
+
 impl<T: ?Sized> Deref for Portal<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
@@ -99,6 +115,12 @@ impl<T: ?Sized> Deref for Portal<T> {
 }
 
 impl<T: ?Sized> RwPortal<T> {
+    pub fn downgrade(&self) -> WeakRwPortal<T> {
+        WeakRwPortal {
+            reference: Rc::downgrade(&self.reference),
+        }
+    }
+
     pub fn borrow<'a>(&'a self) -> impl Deref<Target = T> + 'a {
         PortalRef {
             guard: self.reference.as_ref().borrow(),
@@ -109,6 +131,40 @@ impl<T: ?Sized> RwPortal<T> {
         PortalRefMut {
             guard: self.reference.as_ref().borrow_mut(),
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct WeakPortal<T: ?Sized> {
+    reference: Weak<NonNull<T>>,
+}
+
+#[derive(Debug)]
+pub struct WeakRwPortal<T: ?Sized> {
+    reference: Weak<RefCell<NonNull<T>>>,
+}
+
+impl<T: ?Sized> WeakPortal<T> {
+    pub fn try_upgrade(&self) -> Option<Portal<T>> {
+        self.reference
+            .upgrade()
+            .map(|reference| Portal { reference })
+    }
+
+    pub fn upgrade(&self) -> Portal<T> {
+        self.try_upgrade().expect(ANCHOR_DROPPED)
+    }
+}
+
+impl<T: ?Sized> WeakRwPortal<T> {
+    pub fn try_upgrade(&self) -> Option<RwPortal<T>> {
+        self.reference
+            .upgrade()
+            .map(|reference| RwPortal { reference })
+    }
+
+    pub fn upgrade(&self) -> RwPortal<T> {
+        self.try_upgrade().expect(ANCHOR_DROPPED)
     }
 }
 
