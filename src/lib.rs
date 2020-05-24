@@ -1,5 +1,30 @@
 //! Safely use (stack) references outside their original scope.
 
+#![doc(html_root_url = "https://docs.rs/ref-portals/1.0.0-beta.1")]
+#![doc(test(no_crate_inject))]
+#![warn(
+    clippy::as_conversions,
+    clippy::cargo,
+    clippy::clone_on_ref_ptr,
+    clippy::fallible_impl_from,
+    clippy::missing_const_for_fn,
+    clippy::missing_docs_in_private_items,
+    clippy::multiple_crate_versions,
+    clippy::needless_borrow,
+    clippy::pedantic,
+    clippy::use_self,
+    clippy::wrong_pub_self_convention
+)]
+#![allow(clippy::wildcard_imports)]
+#![deny(clippy::wildcard_dependencies)]
+// Debug cleanup. Uncomment before committing.
+#![forbid(
+    clippy::dbg_macro,
+    clippy::print_stdout,
+    clippy::todo,
+    clippy::unimplemented
+)]
+
 //! # Example
 //!
 //! ```rust
@@ -33,31 +58,10 @@
 //! 
 //! eternal(); // Scoped
 //! ```
-
-//TODO: clippy::cargo
-#![warn(
-    clippy::as_conversions,
-    clippy::clone_on_ref_ptr,
-    clippy::fallible_impl_from,
-    clippy::missing_const_for_fn,
-    clippy::missing_docs_in_private_items,
-    clippy::multiple_crate_versions,
-    clippy::needless_borrow,
-    clippy::pedantic,
-    clippy::use_self,
-    clippy::wrong_pub_self_convention
-)]
-#![allow(clippy::wildcard_imports)]
-#![deny(clippy::wildcard_dependencies)]
-// Debug cleanup. Uncomment before committing.
-#![forbid(
-    clippy::dbg_macro,
-    clippy::print_stdout,
-    clippy::todo,
-    clippy::unimplemented
-)]
-
-#![doc(test(no_crate_inject))]
+//!
+//! # Notes
+//! 
+//! Panic assertions in this documentation use [assert_panic](https://crates.io/crates/assert-panic).
 
 pub mod rc;
 pub mod sync;
