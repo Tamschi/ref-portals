@@ -1,6 +1,7 @@
 //! Theadsafe anchors and portals.  
 //! These (but not their guards) are various degrees of `Send` and `Sync` depending on their type parameter.
 
+use std::panic::UnwindSafe;
 use {
     crate::{ANCHOR_DROPPED, ANCHOR_STILL_IN_USE},
     std::{
@@ -63,6 +64,27 @@ pub struct Anchor<'a, T: ?Sized> {
     _phantom: PhantomData<&'a T>,
 }
 
+/// A threadsafe mutable anchor with concurrent read access.  
+/// Use this to capture mutable references to `Sync` types in a threaded environment.
+///
+/// # Panics
+///
+/// On drop, if any associated `RwPortal`s exist:
+///
+/// ```rust
+/// # use assert_panic::assert_panic;
+/// use ref_portals::sync::RwAnchor;
+///
+/// let mut x = "Scoped".to_owned();
+/// let anchor = RwAnchor::new(&mut x);
+/// Box::leak(Box::new(anchor.portal()));
+///
+/// assert_panic!(
+///     drop(anchor),
+///     &str,
+///     "Anchor still in use (at least one portal exists)",
+/// );
+/// ```
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct RwAnchor<'a, T: ?Sized> {
@@ -70,11 +92,46 @@ pub struct RwAnchor<'a, T: ?Sized> {
     _phantom: PhantomData<&'a mut T>,
 }
 
+impl<'a, T: ?Sized> UnwindSafe for RwAnchor<'a, T>
+where
+    ManuallyDrop<Arc<RwLock<NonNull<T>>>>: UnwindSafe,
+{
+    //SAFETY: Poisoned via `reference` member.
+}
+
+/// A threadsafe mutable anchor with concurrent read access.  
+/// Use this to capture mutable references to `!Sync` types in a threaded environment.
+///
+/// # Panics
+///
+/// On drop, if any associated `WPortal`s exist:
+///
+/// ```rust
+/// # use assert_panic::assert_panic;
+/// use ref_portals::sync::WAnchor;
+///
+/// let mut x = "Scoped".to_owned();
+/// let anchor = WAnchor::new(&mut x);
+/// Box::leak(Box::new(anchor.portal()));
+///
+/// assert_panic!(
+///     drop(anchor),
+///     &str,
+///     "Anchor still in use (at least one portal exists)",
+/// );
+/// ```
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct WAnchor<'a, T: ?Sized> {
     reference: ManuallyDrop<Arc<Mutex<SSNonNull<T>>>>,
     _phantom: PhantomData<&'a mut T>,
+}
+
+impl<'a, T: ?Sized> UnwindSafe for WAnchor<'a, T>
+where
+    ManuallyDrop<Arc<Mutex<NonNull<T>>>>: UnwindSafe,
+{
+    //SAFETY: Poisoned via `reference` member.
 }
 
 impl<'a, T: ?Sized> Anchor<'a, T> {
@@ -410,13 +467,10 @@ impl<'a, T: ?Sized> DerefMut for PortalMutexGuard<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     fn _auto_trait_assertions() {
         // Anything that necessitates changes in this method is a breaking change.
-        use {
-            assert_impl::assert_impl,
-            core::any::Any,
-            std::panic::{RefUnwindSafe, UnwindSafe},
-        };
+        use {assert_impl::assert_impl, core::any::Any, std::panic::RefUnwindSafe};
 
         trait S: Send {}
         trait SS: Send + Sync {}
@@ -475,9 +529,10 @@ mod tests {
         );
         assert_impl!(
             UnwindSafe: Anchor<'_, dyn RefUnwindSafe>,
+            RwAnchor<'_, dyn RefUnwindSafe>,
+            WAnchor<'_, dyn RefUnwindSafe>,
             Portal<dyn RefUnwindSafe>,
         );
-        assert_impl!(!UnwindSafe: RwAnchor<'_, ()>, WAnchor<'_, ()>,);
 
         assert_impl!(
             RefUnwindSafe: RwPortal<dyn Any>,

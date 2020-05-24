@@ -21,7 +21,22 @@ use {
 ///
 /// # Panics
 ///
-/// On drop, if any associated `Portal`s exist.
+/// On drop, if any associated `Portal`s exist:
+///
+/// ```rust
+/// # use assert_panic::assert_panic;
+/// use ref_portals::rc::Anchor;
+///
+/// let x = "Scoped".to_owned();
+/// let anchor = Anchor::new(&x);
+/// Box::leak(Box::new(anchor.portal()));
+///
+/// assert_panic!(
+///     drop(anchor),
+///     String,
+///     starts with "Anchor still in use (at least one portal exists):",
+/// );
+/// ```
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Anchor<'a, T: ?Sized> {
@@ -32,6 +47,7 @@ pub struct Anchor<'a, T: ?Sized> {
     _phantom: PhantomData<&'a T>,
 }
 
+/*
 /// A synchronous mutable anchor.  
 /// Use this to capture mutable references in a single-threaded environment.
 ///
@@ -40,13 +56,20 @@ pub struct Anchor<'a, T: ?Sized> {
 /// On drop, if any associated `RwPortal`s exist:
 ///
 /// ```rust
-/// use ref_portals::rc::Anchor;
-/// 
-/// let x = "Scoped".to_owned();
-/// let anchor = Anchor::new(&x);
+/// # use assert_panic::assert_panic;
+/// use ref_portals::rc::RwAnchor;
+///
+/// let mut x = "Scoped".to_owned();
+/// let anchor = RwAnchor::new(&mut x);
 /// Box::leak(Box::new(anchor.portal()));
-/// drop(anchor)
+///
+/// assert_panic!(
+///     drop(anchor),
+///     String,
+///     starts with "Anchor still in use (at least one portal exists):",
+/// );
 /// ```
+*/
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct RwAnchor<'a, T: ?Sized> {
@@ -66,7 +89,6 @@ impl<'a, T: ?Sized> Anchor<'a, T> {
         }
     }
 
-    #[inline]
     /// Creates an infallible portal with unbounded lifetime.
     ///
     /// # Example
@@ -84,10 +106,13 @@ impl<'a, T: ?Sized> Anchor<'a, T> {
     /// # self_owned(); // Scoped
     /// ```
     ///
+    #[inline]
     pub fn portal(&self) -> Portal<T> {
         self.reference.pipe_deref(Rc::clone).pipe(Portal)
     }
 
+    /// Creates a weak portal with the same target as this one.  
+    /// Dropping an anchor doesn't panic if only weak portals exist.
     #[inline]
     pub fn weak_portal(&self) -> WeakPortal<T> {
         Portal::downgrade(&self.portal())
