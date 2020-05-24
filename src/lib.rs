@@ -27,7 +27,7 @@
 //!     let weak_portal = anchor.weak_portal();
 //!     move || println!(
 //!         "{}",
-//!         *weak_portal.upgrade(), // Panics if the anchor has been dropped.
+//!         *weak_portal.upgrade(), // Panics iff the anchor has been dropped.
 //!     )
 //! }));
 //! 
@@ -62,7 +62,7 @@
 pub mod rc;
 pub mod sync;
 
-/// Panicked when upgrading weak portals if the anchor has been destroyed already.
+/// Panicked when upgrading weak portals iff the anchor has been destroyed already.
 const ANCHOR_DROPPED: &str = "Anchor dropped";
 
 /// Panicked when dropping an anchor if any (strong) portals still exist.

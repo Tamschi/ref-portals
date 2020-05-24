@@ -16,7 +16,7 @@ use {
     wyz::pipe::*,
 };
 
-/// Panicked when borrowing through a portal or dropping an anchor if the anchor has been poisoned.
+/// Panicked when borrowing through a portal or dropping an anchor iff the anchor has been poisoned.
 /// Only mutable anchors can be poisoned.
 const ANCHOR_POISONED: &str = "Anchor poisoned";
 
@@ -57,10 +57,34 @@ impl<T: ?Sized> DerefMut for SSNonNull<T> {
     }
 }
 
+/// A threadsafe immutable anchor with concurrent read access.  
+/// Use this to capture immutable references in a threaded environment.
+///
+/// # Panics
+///
+/// On drop, if any associated `Portal`s exist:
+///
+/// ```rust
+/// # use assert_panic::assert_panic;
+/// use ref_portals::sync::Anchor;
+///
+/// let x = "Scoped".to_owned();
+/// let anchor = Anchor::new(&x);
+/// Box::leak(Box::new(anchor.portal()));
+///
+/// assert_panic!(
+///     drop(anchor),
+///     &str,
+///     "Anchor still in use (at least one portal exists)",
+/// );
+/// ```
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Anchor<'a, T: ?Sized> {
+    /// Internal pointer to the target of the captured reference.
     reference: ManuallyDrop<Arc<SSNonNull<T>>>,
+
+    /// Act as sharing borrower.
     _phantom: PhantomData<&'a T>,
 }
 
@@ -85,10 +109,36 @@ pub struct Anchor<'a, T: ?Sized> {
 ///     "Anchor still in use (at least one portal exists)",
 /// );
 /// ```
+///
+/// Otherwise, on drop, iff the anchor has been poisoned:
+///
+/// ```rust
+/// # use assert_panic::assert_panic;
+/// use ref_portals::sync::RwAnchor;
+///
+/// let mut x = "Scoped".to_owned();
+/// let anchor = RwAnchor::new(&mut x);
+/// {
+///     let portal = anchor.portal();
+///     assert_panic!({
+///         let guard = portal.write();
+///         panic!()
+///     });
+/// }
+///
+/// assert_panic!(
+///     drop(anchor),
+///     String,
+///     starts with "Anchor poisoned:",
+/// );
+/// ```
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct RwAnchor<'a, T: ?Sized> {
+    /// Internal pointer to the target of the captured reference.
     reference: ManuallyDrop<Arc<RwLock<SSNonNull<T>>>>,
+
+    /// Act as exclusive borrower.
     _phantom: PhantomData<&'a mut T>,
 }
 
@@ -120,10 +170,36 @@ where
 ///     "Anchor still in use (at least one portal exists)",
 /// );
 /// ```
+///
+/// Otherwise, on drop, iff the anchor has been poisoned:
+///
+/// ```rust
+/// # use assert_panic::assert_panic;
+/// use ref_portals::sync::WAnchor;
+///
+/// let mut x = "Scoped".to_owned();
+/// let anchor = WAnchor::new(&mut x);
+/// {
+///     let portal = anchor.portal();
+///     assert_panic!({
+///         let guard = portal.lock();
+///         panic!()
+///     });
+/// }
+///
+/// assert_panic!(
+///     drop(anchor),
+///     String,
+///     starts with "Anchor poisoned:",
+/// );
+/// ```
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct WAnchor<'a, T: ?Sized> {
+    /// Internal pointer to the target of the captured reference.
     reference: ManuallyDrop<Arc<Mutex<SSNonNull<T>>>>,
+
+    /// Act as exclusive borrower.
     _phantom: PhantomData<&'a mut T>,
 }
 
@@ -195,6 +271,26 @@ impl<'a, T: ?Sized> WAnchor<'a, T> {
 }
 
 impl<'a, T: ?Sized> Drop for Anchor<'a, T> {
+    /// Executes the destructor for this type. [Read more](https://doc.rust-lang.org/nightly/core/ops/drop/trait.Drop.html#tymethod.drop)
+    ///
+    /// # Panics
+    ///
+    /// If any associated `Portal`s exist:
+    ///
+    /// ```rust
+    /// # use assert_panic::assert_panic;
+    /// use ref_portals::sync::Anchor;
+    ///
+    /// let x = "Scoped".to_owned();
+    /// let anchor = Anchor::new(&x);
+    /// let portal = anchor.portal();
+    ///
+    /// assert_panic!(
+    ///     drop(anchor),
+    ///     &str,
+    ///     "Anchor still in use (at least one portal exists)",
+    /// );
+    /// ```
     fn drop(&mut self) {
         unsafe {
             //SAFETY: Dropping.
@@ -206,6 +302,31 @@ impl<'a, T: ?Sized> Drop for Anchor<'a, T> {
 }
 
 impl<'a, T: ?Sized> Drop for RwAnchor<'a, T> {
+    /// Executes the destructor for this type. [Read more](https://doc.rust-lang.org/nightly/core/ops/drop/trait.Drop.html#tymethod.drop)
+    ///
+    /// # Panics
+    ///
+    /// If any associated `RwPortal`s exist or, otherwise, iff the anchor has been poisoned:
+    ///
+    /// ```rust
+    /// # use assert_panic::assert_panic;
+    /// use ref_portals::sync::RwAnchor;
+    ///
+    /// let mut x = "Scoped".to_owned();
+    /// let anchor = RwAnchor::new(&mut x);
+    /// let portal = anchor.portal();
+    /// assert_panic!({
+    ///     // Poison anchor.
+    ///     let _guard = portal.write();
+    ///     panic!()
+    /// });
+    ///
+    /// assert_panic!(
+    ///     drop(anchor),
+    ///     &str,
+    ///     "Anchor still in use (at least one portal exists)",
+    /// );
+    /// ```
     fn drop(&mut self) {
         unsafe {
             //SAFETY: Dropping.
@@ -219,6 +340,31 @@ impl<'a, T: ?Sized> Drop for RwAnchor<'a, T> {
 }
 
 impl<'a, T: ?Sized> Drop for WAnchor<'a, T> {
+    /// Executes the destructor for this type. [Read more](https://doc.rust-lang.org/nightly/core/ops/drop/trait.Drop.html#tymethod.drop)
+    ///
+    /// # Panics
+    ///
+    /// If any associated `WPortal`s exist or, otherwise, iff the anchor has been poisoned:
+    ///
+    /// ```rust
+    /// # use assert_panic::assert_panic;
+    /// use ref_portals::sync::WAnchor;
+    ///
+    /// let mut x = "Scoped".to_owned();
+    /// let anchor = WAnchor::new(&mut x);
+    /// let portal = anchor.portal();
+    /// assert_panic!({
+    ///     // Poison anchor.
+    ///     let _guard = portal.lock();
+    ///     panic!()
+    /// });
+    ///
+    /// assert_panic!(
+    ///     drop(anchor),
+    ///     &str,
+    ///     "Anchor still in use (at least one portal exists)",
+    /// );
+    /// ```
     fn drop(&mut self) {
         unsafe {
             //SAFETY: Dropping.
@@ -247,6 +393,8 @@ pub struct RwPortal<T: ?Sized>(Arc<RwLock<SSNonNull<T>>>);
 pub struct WPortal<T: ?Sized>(Arc<Mutex<SSNonNull<T>>>);
 
 impl<T: ?Sized> Portal<T> {
+    /// Creates a weak portal with the same target as this one.  
+    /// Dropping an anchor doesn't panic if only weak portals exist.
     #[inline]
     pub fn downgrade(portal: &Self) -> WeakPortal<T> {
         Arc::downgrade(&portal.0).pipe(WeakPortal)
@@ -273,6 +421,8 @@ impl<T: ?Sized> Borrow<T> for Portal<T> {
 }
 
 impl<T: ?Sized> RwPortal<T> {
+    /// Creates a weak portal with the same target as this one.  
+    /// Dropping an anchor doesn't panic if only weak portals exist.
     #[inline]
     pub fn downgrade(&self) -> WeakRwPortal<T> {
         Arc::downgrade(&self.0).pipe(WeakRwPortal)
@@ -293,13 +443,15 @@ impl<T: ?Sized> RwPortal<T> {
 }
 
 impl<T: ?Sized> WPortal<T> {
+    /// Creates a weak portal with the same target as this one.  
+    /// Dropping an anchor doesn't panic if only weak portals exist.
     #[inline]
     pub fn downgrade(&self) -> WeakWPortal<T> {
         Arc::downgrade(&self.0).pipe(WeakWPortal)
     }
 
     #[inline]
-    pub fn write<'a>(&'a self) -> impl DerefMut<Target = T> + 'a {
+    pub fn lock<'a>(&'a self) -> impl DerefMut<Target = T> + 'a {
         self.0.lock().expect(ANCHOR_POISONED).pipe(PortalMutexGuard)
     }
 }

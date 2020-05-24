@@ -43,7 +43,7 @@ pub struct Anchor<'a, T: ?Sized> {
     /// Internal pointer to the target of the captured reference.
     reference: ManuallyDrop<Rc<NonNull<T>>>,
 
-    /// Behave like a sharing borrower.
+    /// Act as sharing borrower.
     _phantom: PhantomData<&'a T>,
 }
 
@@ -76,7 +76,7 @@ pub struct RwAnchor<'a, T: ?Sized> {
     /// Internal pointer to the target of the captured reference.
     reference: ManuallyDrop<Rc<RefCell<NonNull<T>>>>,
 
-    /// Behave like an exclusive borrower.
+    /// Act as exclusive borrower.
     _phantom: PhantomData<&'a mut T>,
 }
 
