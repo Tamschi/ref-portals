@@ -8,7 +8,7 @@ description = "Safely use (stack) references outside their original scope"
 repository = "https://github.com/Tamschi/ref-portals"
 documentation = "https://docs.rs/ref-portals/1.0.0-beta.1/"
 readme = "README.md"
-keywords = ["cake", "lifetime", "portal", "reference", "safe", "stack"]
+keywords = ["extend", "lifetime", "portal", "reference", "safe"]
 categories = ["concurrency", "rust-patterns"]
 include = ["/LICENSE*", "/README.md", "/src/**.rs", "/tests/**.rs"]
 
