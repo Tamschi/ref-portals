@@ -17,7 +17,7 @@ checksum = "c3464313de0c867016e3e69d7e1e9ae3499bcc4c18e12283d381359ed38b5b9e"
 
 [[package]]
 name = "assert-panic"
-version = "1.0.0-preview1"
+version = "1.0.0-preview.1"
 dependencies = [
  "version-sync",
 ]
@@ -112,6 +112,7 @@ name = "ref-portals"
 version = "0.0.0"
 dependencies = [
  "assert-impl",
+ "assert-panic",
  "wyz",
 ]
 
