@@ -196,14 +196,6 @@ pub struct WAnchor<'a, T: ?Sized> {
     _phantom: PhantomData<&'a mut T>,
 }
 
-//TODO: Test poison.
-impl<'a, T: ?Sized> UnwindSafe for WAnchor<'a, T>
-where
-    ManuallyDrop<Arc<Mutex<NonNull<T>>>>: UnwindSafe,
-{
-    //SAFETY: Poisoned via `reference` member.
-}
-
 impl<'a, T: ?Sized> Anchor<'a, T> {
     #[inline]
     pub fn new(reference: &'a T) -> Self {
@@ -369,7 +361,11 @@ impl<'a, T: ?Sized> Drop for WAnchor<'a, T> {
             ManuallyDrop::take(&mut self.reference)
         }
         .pipe(Arc::try_unwrap)
-        .unwrap_or_else(|_| panic!(ANCHOR_STILL_IN_USE))
+        .unwrap_or_else(|reference| {
+            // Poison Mutex.
+            let _guard = reference.lock();
+            panic!(ANCHOR_STILL_IN_USE);
+        })
         .into_inner()
         .unwrap_or_else(|error| Err(error).expect(ANCHOR_POISONED));
     }
@@ -398,6 +394,32 @@ impl<'a, T: ?Sized> Drop for WAnchor<'a, T> {
 /// ```
 impl<'a, T: ?Sized> UnwindSafe for RwAnchor<'a, T> where
     ManuallyDrop<Arc<RwLock<NonNull<T>>>>: UnwindSafe
+{
+}
+
+/// # Safety:
+///
+/// ```rust
+/// # use assert_panic::assert_panic;
+/// use ref_portals::sync::WAnchor;
+///
+/// let mut x = "Scoped".to_owned();
+/// let anchor = WAnchor::new(&mut x);
+/// let portal = anchor.portal();
+///
+/// assert_panic!(
+///     drop(anchor),
+///     &str,
+///     "Anchor still in use (at least one portal exists)",
+/// );
+/// assert_panic!(
+///     { portal.lock(); },
+///     String,
+///     starts with "Anchor poisoned:",
+/// );
+/// ```
+impl<'a, T: ?Sized> UnwindSafe for WAnchor<'a, T> where
+    ManuallyDrop<Arc<Mutex<NonNull<T>>>>: UnwindSafe
 {
 }
 
