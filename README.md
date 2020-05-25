@@ -40,7 +40,8 @@ let eternal: &'static dyn Fn() = Box::leak(Box::new({
     let weak_portal = anchor.weak_portal();
     move || println!(
         "{}",
-        *weak_portal.upgrade(), // Panics iff the anchor has been dropped.
+        // Panics iff the anchor has been dropped.
+        *weak_portal.upgrade(),
     )
 }));
 
