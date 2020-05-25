@@ -142,13 +142,6 @@ pub struct RwAnchor<'a, T: ?Sized> {
     _phantom: PhantomData<&'a mut T>,
 }
 
-impl<'a, T: ?Sized> UnwindSafe for RwAnchor<'a, T>
-where
-    ManuallyDrop<Arc<RwLock<NonNull<T>>>>: UnwindSafe,
-{
-    //SAFETY: Poisoned via `reference` member.
-}
-
 /// A threadsafe mutable anchor with concurrent read access.  
 /// Use this to capture mutable references to `!Sync` types in a threaded environment.
 ///
@@ -203,6 +196,7 @@ pub struct WAnchor<'a, T: ?Sized> {
     _phantom: PhantomData<&'a mut T>,
 }
 
+//TODO: Test poison.
 impl<'a, T: ?Sized> UnwindSafe for WAnchor<'a, T>
 where
     ManuallyDrop<Arc<Mutex<NonNull<T>>>>: UnwindSafe,
@@ -333,7 +327,11 @@ impl<'a, T: ?Sized> Drop for RwAnchor<'a, T> {
             ManuallyDrop::take(&mut self.reference)
         }
         .pipe(Arc::try_unwrap)
-        .unwrap_or_else(|_| panic!(ANCHOR_STILL_IN_USE))
+        .unwrap_or_else(|reference| {
+            // Poison RwLock.
+            let _guard = reference.write();
+            panic!(ANCHOR_STILL_IN_USE);
+        })
         .into_inner()
         .unwrap_or_else(|error| Err(error).expect(ANCHOR_POISONED));
     }
@@ -375,6 +373,32 @@ impl<'a, T: ?Sized> Drop for WAnchor<'a, T> {
         .into_inner()
         .unwrap_or_else(|error| Err(error).expect(ANCHOR_POISONED));
     }
+}
+
+/// # Safety:
+///
+/// ```rust
+/// # use assert_panic::assert_panic;
+/// use ref_portals::sync::RwAnchor;
+///
+/// let mut x = "Scoped".to_owned();
+/// let anchor = RwAnchor::new(&mut x);
+/// let portal = anchor.portal();
+///
+/// assert_panic!(
+///     drop(anchor),
+///     &str,
+///     "Anchor still in use (at least one portal exists)",
+/// );
+/// assert_panic!(
+///     { portal.read(); },
+///     String,
+///     starts with "Anchor poisoned:",
+/// );
+/// ```
+impl<'a, T: ?Sized> UnwindSafe for RwAnchor<'a, T> where
+    ManuallyDrop<Arc<RwLock<NonNull<T>>>>: UnwindSafe
+{
 }
 
 #[derive(Debug)]
