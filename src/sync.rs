@@ -1,7 +1,6 @@
 //! Theadsafe anchors and portals.  
 //! These (but not their guards) are various degrees of `Send` and `Sync` depending on their type parameter.
 
-use std::panic::UnwindSafe;
 use {
     crate::{ANCHOR_DROPPED, ANCHOR_STILL_IN_USE},
     std::{
@@ -10,6 +9,7 @@ use {
         marker::PhantomData,
         mem::ManuallyDrop,
         ops::{Deref, DerefMut},
+        panic::{RefUnwindSafe, UnwindSafe},
         ptr::NonNull,
         sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak},
     },
@@ -392,10 +392,7 @@ impl<'a, T: ?Sized> Drop for WAnchor<'a, T> {
 ///     starts with "Anchor poisoned:",
 /// );
 /// ```
-impl<'a, T: ?Sized> UnwindSafe for RwAnchor<'a, T> where
-    ManuallyDrop<Arc<RwLock<NonNull<T>>>>: UnwindSafe
-{
-}
+impl<'a, T: ?Sized> UnwindSafe for RwAnchor<'a, T> where T: RefUnwindSafe {}
 
 /// # Safety:
 ///
@@ -418,10 +415,7 @@ impl<'a, T: ?Sized> UnwindSafe for RwAnchor<'a, T> where
 ///     starts with "Anchor poisoned:",
 /// );
 /// ```
-impl<'a, T: ?Sized> UnwindSafe for WAnchor<'a, T> where
-    ManuallyDrop<Arc<Mutex<NonNull<T>>>>: UnwindSafe
-{
-}
+impl<'a, T: ?Sized> UnwindSafe for WAnchor<'a, T> where T: RefUnwindSafe {}
 
 #[derive(Debug)]
 #[must_use]
@@ -668,7 +662,7 @@ mod tests {
 
     fn _auto_trait_assertions() {
         // Anything that necessitates changes in this method is a breaking change.
-        use {assert_impl::assert_impl, core::any::Any, std::panic::RefUnwindSafe};
+        use {assert_impl::assert_impl, core::any::Any};
 
         trait S: Send {}
         trait SS: Send + Sync {}
