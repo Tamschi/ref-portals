@@ -2,7 +2,7 @@
 //! These (but not their guards) are various degrees of `Send` and `Sync` depending on their type parameter.
 
 use {
-    crate::{ANCHOR_DROPPED, ANCHOR_STILL_IN_USE},
+    crate::{ANCHOR_DROPPED, ANCHOR_POISONED, ANCHOR_STILL_IN_USE},
     std::{
         borrow::Borrow,
         fmt::Debug,
@@ -15,10 +15,6 @@ use {
     },
     wyz::pipe::*,
 };
-
-/// Panicked when borrowing through a portal or dropping an anchor iff the anchor has been poisoned.
-/// Only mutable anchors can be poisoned.
-const ANCHOR_POISONED: &str = "Anchor poisoned";
 
 /// An externally synchronised `NonNull<T>`.
 /// SS stands for Send Sync.
@@ -417,16 +413,22 @@ impl<'a, T: ?Sized> UnwindSafe for RwAnchor<'a, T> where T: RefUnwindSafe {}
 /// ```
 impl<'a, T: ?Sized> UnwindSafe for WAnchor<'a, T> where T: RefUnwindSafe {}
 
+/// A threadsafe immutable portal.  
+/// Dereference it directly with `*` or `.deref()`.
 #[derive(Debug)]
 #[must_use]
 #[repr(transparent)]
 pub struct Portal<T: ?Sized>(Arc<SSNonNull<T>>);
 
+/// A threadsafe mutable portal supporting concurred reads.  
+/// Acquire a guard by calling `.read()` or `.write()`.
 #[derive(Debug)]
 #[must_use]
 #[repr(transparent)]
 pub struct RwPortal<T: ?Sized>(Arc<RwLock<SSNonNull<T>>>);
 
+/// A threadsafe mutable portal with only exclusive access.  
+/// Acquire a guard by calling `.lock()`.
 #[derive(Debug)]
 #[must_use]
 #[repr(transparent)]

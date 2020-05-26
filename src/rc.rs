@@ -2,7 +2,8 @@
 //! These don't implement `Send` or `Sync`, but are more efficient for use cases where that's not needed.
 
 use {
-    crate::{ANCHOR_DROPPED, ANCHOR_STILL_IN_USE},
+    crate::{ANCHOR_DROPPED, ANCHOR_POISONED, ANCHOR_STILL_IN_USE},
+    log::error,
     std::{
         borrow::Borrow,
         cell::{Ref, RefCell, RefMut},
@@ -10,13 +11,23 @@ use {
         marker::PhantomData,
         mem::ManuallyDrop,
         ops::{Deref, DerefMut},
+        panic::{RefUnwindSafe, UnwindSafe},
         ptr::NonNull,
         rc::{Rc, Weak},
+        sync::Mutex, // Only to deadlock.
+        thread,
     },
     wyz::pipe::*,
 };
 
-/// A synchronous immutable anchor.  
+/// Poison helper for `!Send` mutable anchors.
+#[derive(Debug)]
+struct Poisonable<T> {
+    pointer: T,
+    poisoned: bool,
+}
+
+/// An `!Send` immutable anchor.  
 /// Use this to capture shared references in a single-threaded environment.
 ///
 /// # Panics
@@ -47,9 +58,25 @@ pub struct Anchor<'a, T: ?Sized> {
     _phantom: PhantomData<&'a T>,
 }
 
-/*
-/// A synchronous mutable anchor.  
+/// An `!Send` mutable anchor with overlapping immutable borrows.
 /// Use this to capture mutable references in a single-threaded environment.
+///
+/// # Deadlocks
+///
+/// Iff there is a currently active borrow, then dropping this anchor will cause a deadlock as last resort measure to prevent UB:
+///
+/// ```rust
+/// use ref_portals::rc::RwAnchor;
+///
+/// let mut x = "Scoped".to_owned();
+/// let anchor = RwAnchor::new(&mut x);
+/// let portal = anchor.portal();
+/// let _guard = portal.borrow();
+///
+/// // drop(anchor);
+///
+/// unreachable!();
+/// ```
 ///
 /// # Panics
 ///
@@ -65,16 +92,38 @@ pub struct Anchor<'a, T: ?Sized> {
 ///
 /// assert_panic!(
 ///     drop(anchor),
-///     String,
-///     starts with "Anchor still in use (at least one portal exists):",
+///     &str,
+///     "Anchor still in use (at least one portal exists)",
 /// );
 /// ```
-*/
+///
+/// Otherwise, on drop, iff the anchor has been poisoned:
+///
+/// ```rust
+/// # use assert_panic::assert_panic;
+/// use ref_portals::rc::RwAnchor;
+///
+/// let mut x = "Scoped".to_owned();
+/// let anchor = RwAnchor::new(&mut x);
+/// {
+///     let portal = anchor.portal();
+///     assert_panic!({
+///         let guard = portal.borrow_mut();
+///         panic!()
+///     });
+/// }
+///
+/// assert_panic!(
+///     drop(anchor),
+///     &str,
+///     "Anchor poisoned",
+/// );
+/// ```
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct RwAnchor<'a, T: ?Sized> {
     /// Internal pointer to the target of the captured reference.
-    reference: ManuallyDrop<Rc<RefCell<NonNull<T>>>>,
+    reference: ManuallyDrop<Rc<RefCell<Poisonable<NonNull<T>>>>>,
 
     /// Act as exclusive borrower.
     _phantom: PhantomData<&'a mut T>,
@@ -123,7 +172,10 @@ impl<'a, T: ?Sized> RwAnchor<'a, T> {
     /// Creates a new `RwAnchor` instance, capturing `reference`.
     pub fn new(reference: &'a mut T) -> Self {
         Self {
-            reference: ManuallyDrop::new(Rc::new(RefCell::new(reference.into()))),
+            reference: ManuallyDrop::new(Rc::new(RefCell::new(Poisonable {
+                pointer: reference.into(),
+                poisoned: false,
+            }))),
             _phantom: PhantomData,
         }
     }
@@ -140,6 +192,7 @@ impl<'a, T: ?Sized> RwAnchor<'a, T> {
 }
 
 impl<'a, T: ?Sized> Drop for Anchor<'a, T> {
+    //TODO: Deadlock if active borrows exist.
     fn drop(&mut self) {
         unsafe {
             //SAFETY: Dropping.
@@ -150,29 +203,107 @@ impl<'a, T: ?Sized> Drop for Anchor<'a, T> {
     }
 }
 
+//TODO: Test deadlock.
 impl<'a, T: ?Sized> Drop for RwAnchor<'a, T> {
+    /// Executes the destructor for this type. [Read more](https://doc.rust-lang.org/nightly/core/ops/drop/trait.Drop.html#tymethod.drop)
+    ///
+    /// # Panics
+    ///
+    /// If any associated `RwPortal`s exist or, otherwise, iff the anchor has been poisoned:
+    ///
+    /// ```rust
+    /// # use assert_panic::assert_panic;
+    /// use ref_portals::rc::RwAnchor;
+    ///
+    /// let mut x = "Scoped".to_owned();
+    /// let anchor = RwAnchor::new(&mut x);
+    /// let portal = anchor.portal();
+    /// assert_panic!({
+    ///     // Poison anchor.
+    ///     let _guard = portal.borrow_mut();
+    ///     panic!()
+    /// });
+    ///
+    /// assert_panic!(
+    ///     drop(anchor),
+    ///     &str,
+    ///     "Anchor still in use (at least one portal exists)",
+    /// );
+    /// ```
     fn drop(&mut self) {
         unsafe {
             //SAFETY: Dropping.
             ManuallyDrop::take(&mut self.reference)
         }
         .pipe(Rc::try_unwrap)
-        .expect(ANCHOR_STILL_IN_USE)
-        .into_inner(); // Not fallible.
+        .unwrap_or_else(|reference| {
+            reference
+                .try_borrow_mut()
+                .unwrap_or_else(|_| {
+                    // So at this point we know that something else has taken out a borrow of the poisonable value,
+                    // and we know that that borrow will never be released because all the types leading there are `!Send`,
+                    // and we also don't know whether that's only used on this one thread because a derived reference could have been sent elsewhere.
+                    // Meaning this is the only way to prevent UB here:
+                    error!("!Send `RwAnchor` dropped while borrowed from. Deadlocking thread to prevent UB.");
+                    let deadlock_mutex = Mutex::new(());
+                    let _deadlock_guard = deadlock_mutex.lock().unwrap();
+                    let _never = deadlock_mutex.lock();
+                    // Congratulations.
+                    unreachable!()
+                })
+                .poisoned = true;
+            panic!(ANCHOR_STILL_IN_USE)
+        })
+        .into_inner() // Not fallible.
+        .poisoned
+        .pipe(|poisoned| {
+            if poisoned {
+                panic!(ANCHOR_POISONED)
+            }
+        })
     }
 }
 
+/// # Safety:
+///
+/// ```rust
+/// # use assert_panic::assert_panic;
+/// use ref_portals::rc::RwAnchor;
+///
+/// let mut x = "Scoped".to_owned();
+/// let anchor = RwAnchor::new(&mut x);
+/// let portal = anchor.portal();
+///
+/// assert_panic!(
+///     drop(anchor),
+///     &str,
+///     "Anchor still in use (at least one portal exists)",
+/// );
+/// assert_panic!(
+///     { portal.borrow_mut(); },
+///     &str,
+///     "Anchor poisoned",
+/// );
+/// ```
+impl<'a, T: ?Sized> UnwindSafe for RwAnchor<'a, T> where T: RefUnwindSafe {}
+
+/// An `!Send` immutable portal.  
+/// Dereference it directly with `*` or `.deref()`.
 #[derive(Debug)]
 #[must_use]
 #[repr(transparent)]
 pub struct Portal<T: ?Sized>(Rc<NonNull<T>>);
 
+/// An `!Send` mutable portal with overlapping immutable borrows.  
+/// Acquire a guard by calling `.borrow()` or `.borrow_mut()`.
 #[derive(Debug)]
 #[must_use]
 #[repr(transparent)]
-pub struct RwPortal<T: ?Sized>(Rc<RefCell<NonNull<T>>>);
+pub struct RwPortal<T: ?Sized>(Rc<RefCell<Poisonable<NonNull<T>>>>);
 
 impl<T: ?Sized> Portal<T> {
+    /// Creates a weak portal with the same target as this one.  
+    /// Dropping an anchor doesn't panic if only weak portals exist.
     #[inline]
     pub fn downgrade(portal: &Self) -> WeakPortal<T> {
         Rc::downgrade(&portal.0).pipe(WeakPortal)
@@ -199,6 +330,8 @@ impl<T: ?Sized> Borrow<T> for Portal<T> {
 }
 
 impl<T: ?Sized> RwPortal<T> {
+    /// Creates a weak portal with the same target as this one.  
+    /// Dropping an anchor doesn't panic if only weak portals exist.
     #[inline]
     pub fn downgrade(&self) -> WeakRwPortal<T> {
         Rc::downgrade(&self.0).pipe(WeakRwPortal)
@@ -206,12 +339,20 @@ impl<T: ?Sized> RwPortal<T> {
 
     #[inline]
     pub fn borrow<'a>(&'a self) -> impl Deref<Target = T> + 'a {
-        self.0.as_ref().borrow().pipe(PortalRef)
+        let guard = self.0.as_ref().borrow();
+        if guard.poisoned {
+            panic!(ANCHOR_POISONED)
+        }
+        PortalRef(guard)
     }
 
     #[inline]
     pub fn borrow_mut<'a>(&'a self) -> impl DerefMut<Target = T> + 'a {
-        self.0.as_ref().borrow_mut().pipe(PortalRefMut)
+        let guard = self.0.as_ref().borrow_mut();
+        if guard.poisoned {
+            panic!(ANCHOR_POISONED)
+        }
+        PortalRefMut(guard)
     }
 }
 
@@ -229,6 +370,12 @@ impl<T: ?Sized> Clone for RwPortal<T> {
     }
 }
 
+//TODO: Docs, test.
+impl<T: ?Sized> RefUnwindSafe for RwPortal<T> where T: RefUnwindSafe {}
+
+//TODO: Docs, test.
+impl<T: ?Sized> UnwindSafe for RwPortal<T> where T: RefUnwindSafe {}
+
 #[derive(Debug)]
 #[must_use]
 #[repr(transparent)]
@@ -237,7 +384,7 @@ pub struct WeakPortal<T: ?Sized>(Weak<NonNull<T>>);
 #[derive(Debug)]
 #[must_use]
 #[repr(transparent)]
-pub struct WeakRwPortal<T: ?Sized>(Weak<RefCell<NonNull<T>>>);
+pub struct WeakRwPortal<T: ?Sized>(Weak<RefCell<Poisonable<NonNull<T>>>>);
 
 impl<T: ?Sized> WeakPortal<T> {
     #[inline]
@@ -278,16 +425,16 @@ impl<T: ?Sized> Clone for WeakRwPortal<T> {
 }
 
 #[repr(transparent)]
-struct PortalRef<'a, T: 'a + ?Sized>(Ref<'a, NonNull<T>>);
+struct PortalRef<'a, T: 'a + ?Sized>(Ref<'a, Poisonable<NonNull<T>>>);
 
 #[repr(transparent)]
-struct PortalRefMut<'a, T: 'a + ?Sized>(RefMut<'a, NonNull<T>>);
+struct PortalRefMut<'a, T: 'a + ?Sized>(RefMut<'a, Poisonable<NonNull<T>>>);
 
 impl<'a, T: ?Sized> Deref for PortalRef<'a, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &Self::Target {
-        let pointer = self.0.deref();
+        let pointer = &self.0.deref().pointer;
         unsafe {
             //SAFETY: Valid as long as self.0 is. Can't be created from a read-only anchor.
             pointer.as_ref()
@@ -299,7 +446,7 @@ impl<'a, T: ?Sized> Deref for PortalRefMut<'a, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &Self::Target {
-        let pointer = self.0.deref();
+        let pointer = &self.0.deref().pointer;
         unsafe {
             //SAFETY: Valid as long as self.0 is. Can't be created from a read-only anchor.
             pointer.as_ref()
@@ -310,10 +457,19 @@ impl<'a, T: ?Sized> Deref for PortalRefMut<'a, T> {
 impl<'a, T: ?Sized> DerefMut for PortalRefMut<'a, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        let pointer = self.0.deref_mut();
+        let pointer = &mut self.0.deref_mut().pointer;
         unsafe {
             //SAFETY: Valid as long as self.0 is. Can't be created from a read-only anchor.
             pointer.as_mut()
+        }
+    }
+}
+
+impl<'a, T: ?Sized> Drop for PortalRefMut<'a, T> {
+    #[inline]
+    fn drop(&mut self) {
+        if thread::panicking() {
+            self.0.poisoned = true;
         }
     }
 }
@@ -324,11 +480,7 @@ mod tests {
 
     fn _auto_trait_assertions() {
         // Anything that necessitates changes in this method is a breaking change.
-        use {
-            assert_impl::assert_impl,
-            core::any::Any,
-            std::panic::{RefUnwindSafe, UnwindSafe},
-        };
+        use {assert_impl::assert_impl, core::any::Any};
 
         assert_impl!(
             !Send: Anchor<'_, ()>,
@@ -350,25 +502,25 @@ mod tests {
 
         assert_impl!(
             !UnwindSafe: Anchor<'_, dyn UnwindSafe>,
+            RwAnchor<'_, dyn UnwindSafe>,
             Portal<dyn UnwindSafe>,
+            RwPortal<dyn UnwindSafe>,
         );
         assert_impl!(
             UnwindSafe: Anchor<'_, dyn RefUnwindSafe>,
+            RwAnchor<'_, dyn RefUnwindSafe>,
             Portal<dyn RefUnwindSafe>,
+            RwPortal<dyn RefUnwindSafe>,
         );
-        assert_impl!(
-            !UnwindSafe: RwAnchor<'_, ()>,
-            RwPortal<()>,
-            PortalRef<'_, ()>,
-            PortalRefMut<'_, ()>
-        );
+        assert_impl!(!UnwindSafe: PortalRef<'_, ()>, PortalRefMut<'_, ()>);
 
+        assert_impl!(!RefUnwindSafe: RwPortal<dyn UnwindSafe>);
+        assert_impl!(RefUnwindSafe: RwPortal<dyn RefUnwindSafe>);
         assert_impl!(
             //TODO: Should any of these by more RefUnwindSafe?
             !RefUnwindSafe: Anchor<'_, ()>,
             RwAnchor<'_, ()>,
             Portal<()>,
-            RwPortal<()>,
             PortalRef<'_, ()>,
             PortalRefMut<'_, ()>,
         );

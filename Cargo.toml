@@ -14,6 +14,7 @@ include = ["/LICENSE*", "/README.md", "/src/**.rs", "/tests/**.rs"]
 
 [dependencies]
 wyz = "0.2.0"
+log = "0.4.8"
 
 [dev-dependencies]
 assert-impl = "0.1.3"
