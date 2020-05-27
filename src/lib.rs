@@ -1,6 +1,6 @@
 //! Safely use (stack) references outside their original scope.
 
-#![doc(html_root_url = "https://docs.rs/ref-portals/1.0.0-beta.1")]
+#![doc(html_root_url = "https://docs.rs/ref-portals/1.0.0-beta.2")]
 #![doc(test(no_crate_inject))]
 #![warn(
     clippy::as_conversions,

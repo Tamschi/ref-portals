@@ -1,12 +1,12 @@
 [package]
 name = "ref-portals"
-version = "1.0.0-beta.1"
+version = "1.0.0-beta.2"
 authors = ["Tamme Schichler <tamme@schichler.dev>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
 description = "Safely use (stack) references outside their original scope"
 repository = "https://github.com/Tamschi/ref-portals"
-documentation = "https://docs.rs/ref-portals/1.0.0-beta.1/"
+documentation = "https://docs.rs/ref-portals/1.0.0-beta.2/"
 readme = "README.md"
 keywords = ["extend", "lifetime", "portal", "reference", "safe"]
 categories = ["concurrency", "rust-patterns"]

@@ -1,7 +1,7 @@
 # ref-portals
 
 [![Latest Version](https://img.shields.io/crates/v/ref-portals.svg)](https://crates.io/crates/ref-portals)
-[![docs.rs](https://docs.rs/ref-portals/badge.svg?version=1.0.0-beta.1)](https://docs.rs/ref-portals/1.0.0-beta.1/ref_portals/)
+[![docs.rs](https://docs.rs/ref-portals/badge.svg?version=1.0.0-beta.2)](https://docs.rs/ref-portals/1.0.0-beta.2/ref_portals/)
 
 Safely use (stack) references outside their original scope.
 
