@@ -435,7 +435,7 @@ pub struct RwPortal<T: ?Sized>(Arc<RwLock<SSNonNull<T>>>);
 pub struct WPortal<T: ?Sized>(Arc<Mutex<SSNonNull<T>>>);
 
 impl<T: ?Sized> Portal<T> {
-    /// Creates a weak portal with the same target as this one.  
+    /// Creates a weak portal associated with the same anchor as `portal`.  
     /// Dropping an anchor doesn't panic if only weak portals exist.
     #[inline]
     pub fn downgrade(portal: &Self) -> WeakPortal<T> {
@@ -463,7 +463,7 @@ impl<T: ?Sized> Borrow<T> for Portal<T> {
 }
 
 impl<T: ?Sized> RwPortal<T> {
-    /// Creates a weak portal with the same target as this one.  
+    /// Creates a weak portal associated with the same anchor as this one.  
     /// Dropping an anchor doesn't panic if only weak portals exist.
     #[inline]
     pub fn downgrade(&self) -> WeakRwPortal<T> {
@@ -485,7 +485,7 @@ impl<T: ?Sized> RwPortal<T> {
 }
 
 impl<T: ?Sized> WPortal<T> {
-    /// Creates a weak portal with the same target as this one.  
+    /// Creates a weak portal associated with the same anchor as this one.  
     /// Dropping an anchor doesn't panic if only weak portals exist.
     #[inline]
     pub fn downgrade(&self) -> WeakWPortal<T> {

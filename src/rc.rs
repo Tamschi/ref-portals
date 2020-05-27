@@ -133,7 +133,7 @@ impl<'a, T: ?Sized> Anchor<'a, T> {
         }
     }
 
-    /// Creates an infallible portal with unbounded lifetime.
+    /// Creates an infallible portal of indefinite lifetime associated with this anchor.
     ///
     /// # Example
     ///
@@ -155,7 +155,7 @@ impl<'a, T: ?Sized> Anchor<'a, T> {
         self.reference.pipe_deref(Rc::clone).pipe(Portal)
     }
 
-    /// Creates a weak portal with the same target as this one.  
+    /// Creates a weak portal of indefinite lifetime associated with this anchor.  
     /// Dropping an anchor doesn't panic if only weak portals exist.
     #[inline]
     pub fn weak_portal(&self) -> WeakPortal<T> {
@@ -346,7 +346,7 @@ pub struct Portal<T: ?Sized>(Rc<NonNull<T>>);
 pub struct RwPortal<T: ?Sized>(Rc<RefCell<Poisonable<NonNull<T>>>>);
 
 impl<T: ?Sized> Portal<T> {
-    /// Creates a weak portal with the same target as this one.  
+    /// Creates a weak portal associated with the same anchor as `portal`.  
     /// Dropping an anchor doesn't panic if only weak portals exist.
     #[inline]
     pub fn downgrade(portal: &Self) -> WeakPortal<T> {
@@ -374,7 +374,7 @@ impl<T: ?Sized> Borrow<T> for Portal<T> {
 }
 
 impl<T: ?Sized> RwPortal<T> {
-    /// Creates a weak portal with the same target as this one.  
+    /// Creates a weak portal associated with the same anchor as this one.  
     /// Dropping an anchor doesn't panic if only weak portals exist.
     #[inline]
     pub fn downgrade(&self) -> WeakRwPortal<T> {
