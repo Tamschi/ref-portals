@@ -66,6 +66,7 @@ pub struct Anchor<'a, T: ?Sized> {
 /// Iff there is a currently active borrow, then dropping this anchor will cause a deadlock as last resort measure to prevent UB:
 ///
 /// ```rust
+/// # use {assert_deadlock::assert_deadlock, std::time::Duration};
 /// use ref_portals::rc::RwAnchor;
 ///
 /// let mut x = "Scoped".to_owned();
@@ -73,9 +74,7 @@ pub struct Anchor<'a, T: ?Sized> {
 /// let portal = anchor.portal();
 /// let _guard = portal.borrow();
 ///
-/// // drop(anchor);
-///
-/// unreachable!();
+/// assert_deadlock!(drop(anchor), Duration::from_secs(1));
 /// ```
 ///
 /// # Panics
