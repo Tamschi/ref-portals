@@ -69,7 +69,7 @@ pub mod sync;
 /// Panicked when upgrading weak portals iff the anchor has been destroyed already.
 const ANCHOR_DROPPED: &str = "Anchor dropped";
 
-/// Panicked when borrowing through a portal or dropping an anchor iff the anchor has been poisoned.
+/// Panicked when borrowing through a portal or dropping an anchor if the anchor has been poisoned.
 /// Only mutable anchors can be poisoned.
 const ANCHOR_POISONED: &str = "Anchor poisoned";
 
