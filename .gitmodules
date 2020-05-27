@@ -4,3 +4,6 @@
 [submodule "assert-panic"]
 	path = assert-panic
 	url = https://github.com/Tamschi/assert-panic.git
+[submodule "assert-deadlock"]
+	path = assert-deadlock
+	url = https://github.com/Tamschi/assert-deadlock.git
