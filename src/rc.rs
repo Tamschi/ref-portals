@@ -30,23 +30,19 @@ struct Poisonable<T> {
 /// An `!Send` immutable anchor.  
 /// Use this to capture shared references in a single-threaded environment.
 ///
-/// # Panics
+/// # Deadlocks
 ///
 /// On drop, if any associated `Portal`s exist:
 ///
 /// ```rust
-/// # use assert_panic::assert_panic;
+/// # use {assert_deadlock::assert_deadlock, std::time::Duration};
 /// use ref_portals::rc::Anchor;
 ///
-/// let x = "Scoped".to_owned();
-/// let anchor = Anchor::new(&x);
-/// Box::leak(Box::new(anchor.portal()));
+/// let mut x = "Scoped".to_owned();
+/// let anchor = Anchor::new(&mut x);
+/// let portal = anchor.portal();
 ///
-/// assert_panic!(
-///     drop(anchor),
-///     String,
-///     starts with "Anchor still in use (at least one portal exists):",
-/// );
+/// assert_deadlock!(drop(anchor), Duration::from_secs(1));
 /// ```
 #[derive(Debug)]
 #[repr(transparent)]
@@ -150,8 +146,8 @@ impl<'a, T: ?Sized> Anchor<'a, T> {
     ///     let portal = anchor.portal();
     ///     move || println!("{}", *portal)
     /// });
-    /// #
-    /// # self_owned(); // Scoped
+    ///
+    /// self_owned(); // Scoped
     /// ```
     ///
     #[inline]
@@ -179,6 +175,29 @@ impl<'a, T: ?Sized> RwAnchor<'a, T> {
         }
     }
 
+    /// Creates a fallible portal with unbounded lifetime supporting overlapping reads.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use ref_portals::rc::RwAnchor;
+    /// #
+    /// let mut x = "Scoped".to_owned();
+    /// let anchor = RwAnchor::new(&mut x);
+    /// let self_owned: Box<dyn Fn() + 'static> = Box::new({
+    ///     let portal = anchor.portal();
+    ///     move || {
+    ///         println!("{}", *portal.borrow());
+    ///         *portal.borrow_mut() = "Replacement".to_owned();
+    ///     }
+    /// });
+    ///
+    /// self_owned(); // Scoped
+    /// drop(self_owned);
+    /// drop(anchor);
+    /// println!("{}", x); // Replacement
+    /// ```
+    ///
     #[inline]
     pub fn portal(&self) -> RwPortal<T> {
         self.reference.pipe_deref(Rc::clone).pipe(RwPortal)
@@ -198,7 +217,16 @@ impl<'a, T: ?Sized> Drop for Anchor<'a, T> {
             ManuallyDrop::take(&mut self.reference)
         }
         .pipe(Rc::try_unwrap)
-        .expect(ANCHOR_STILL_IN_USE);
+        .unwrap_or_else(|_pointer| {
+            // Immutable portals are always active borrows, so we need to deadlock immediately here,
+            // since a reference could have been sent to another thread.
+            error!("!Send `Anchor` dropped while at least one Portal still exists. Deadlocking thread to prevent UB.");
+            let deadlock_mutex = Mutex::new(());
+            let _deadlock_guard = deadlock_mutex.lock().unwrap();
+            let _never = deadlock_mutex.lock();
+            // Congratulations.
+            unreachable!()
+        });
     }
 }
 
@@ -262,6 +290,23 @@ impl<'a, T: ?Sized> Drop for RwAnchor<'a, T> {
         })
     }
 }
+
+/// # Safety:
+///
+/// ```rust
+/// # use {assert_deadlock::assert_deadlock, std::time::Duration};
+/// use ref_portals::rc::Anchor;
+///
+/// let mut x = "Scoped".to_owned();
+/// let anchor = Anchor::new(&mut x);
+/// let portal = anchor.portal();
+///
+/// assert_deadlock!(
+///     drop(anchor),
+///     Duration::from_secs(1),
+/// );
+/// ```
+impl<'a, T: ?Sized> UnwindSafe for Anchor<'a, T> where T: RefUnwindSafe {}
 
 /// # Safety:
 ///
