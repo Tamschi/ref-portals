@@ -28,7 +28,7 @@ let self_owned: Box<dyn Fn() + 'static> = Box::new({
 self_owned(); // Scoped
 ```
 
-Note that dropping `anchor` before `self_owned` would still cause a panic here.  
+Note that dropping `anchor` before `self_owned` would still cause a freeze here (which is the only way to reliably prevent UB in this situation).  
 You can use weak portals to work around this:
 
 ```rust
@@ -48,6 +48,10 @@ let eternal: &'static dyn Fn() = Box::leak(Box::new({
 eternal(); // Scoped
 ```
 
+Mutable anchors can panic on drop instead of freezing the thread if the resource is not currently in use. Immutable anchors are more performant but lack the necessary guards to distinguish whether values are actively in use.
+
+Anchors in the `sync` module will block instead of freezing the thread, but that may still cause a (in that case silent) deadlock anyway. Anchors from the `rc` module use `log::error!` to make freezes visible.
+
 ## Versioning
 
 `ref-portals` strictly follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html) with the following exceptions:
@@ -56,3 +60,7 @@ eternal(); // Scoped
 Consider it the global feature level.
 - The patch version will not reset to 0 on major or minor version changes.  
 Consider it the global patch level.
+
+## Why
+
+This crate is likely extremely niche, but it probably can be useful to experimentally figure out if your logic is sound overall. Any potential UB from lifetime extensions is mapped onto panics or freezes/deadlocks, which at least won't lead to data corruption.
