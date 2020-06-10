@@ -13,7 +13,7 @@ dependencies = [
 name = "assert-deadlock"
 version = "1.0.0-alpha.1"
 dependencies = [
- "assert-panic 1.0.0-preview.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "assert-panic 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -24,16 +24,16 @@ checksum = "c3464313de0c867016e3e69d7e1e9ae3499bcc4c18e12283d381359ed38b5b9e"
 
 [[package]]
 name = "assert-panic"
-version = "1.0.0-preview.1"
+version = "1.0.0"
 dependencies = [
  "version-sync",
 ]
 
 [[package]]
 name = "assert-panic"
-version = "1.0.0-preview.1"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2cb4c7fea2262ab5d4d3c3cf6e91c487ad7acce2752f0f64504dc0dd368fbd3"
+checksum = "e3f38ecc065a199e44910a9d20cc831c0fa2249f34274175945a31ed58fd9e1d"
 
 [[package]]
 name = "bitflags"
@@ -141,7 +141,7 @@ version = "1.0.0-beta.2"
 dependencies = [
  "assert-deadlock",
  "assert-impl",
- "assert-panic 1.0.0-preview.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "assert-panic 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log",
  "version-sync",
  "wyz",
